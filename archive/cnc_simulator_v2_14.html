@@ -1,0 +1,1381 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>CNC G-Code Simulator</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+:root{--bg:#080b0f;--panel:#0c1018;--border:#1a2535;--accent:#00c8ff;--ok:#39ff14;--rapid:#ff3030;--cut:#2277ff;--text:#b8ccd8;--dim:#3a5060;--glow:0 0 14px #00c8ff50;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:'Share Tech Mono',monospace;height:100vh;overflow:hidden;display:flex;flex-direction:column;}
+header{display:flex;align-items:center;gap:10px;padding:6px 14px;border-bottom:1px solid var(--border);background:linear-gradient(90deg,#080b0f,#0d1520,#080b0f);flex-shrink:0;flex-wrap:wrap;}
+.logo{font-family:'Orbitron',sans-serif;font-weight:900;font-size:1rem;letter-spacing:4px;color:var(--accent);text-shadow:var(--glow);white-space:nowrap;}
+.logo em{color:#ff6b35;font-style:normal;}
+.dro{display:flex;gap:10px;}
+.dro-item{display:flex;flex-direction:column;align-items:center;gap:0px;font-size:0.58rem;color:var(--dim);}
+.dro-val{font-size:0.78rem;color:var(--ok);letter-spacing:1px;min-width:58px;text-align:center;}
+.dro-mach{font-size:0.58rem;color:#2a6a40;min-width:58px;text-align:center;}
+.badge{font-family:'Orbitron',sans-serif;font-size:0.6rem;padding:3px 9px;border:1px solid var(--dim);color:var(--dim);letter-spacing:2px;}
+.badge.brun{border-color:var(--ok);color:var(--ok);}
+.badge.brapid{border-color:var(--rapid);color:var(--rapid);}
+.badge.bcut{border-color:var(--cut);color:var(--cut);}
+.hbtns{display:flex;gap:5px;margin-left:auto;align-items:center;}
+.btn{padding:4px 11px;border:1px solid var(--border);background:transparent;color:var(--text);font-family:'Share Tech Mono',monospace;font-size:0.68rem;cursor:pointer;letter-spacing:1px;transition:all .15s;white-space:nowrap;}
+.btn:hover{border-color:var(--accent);color:var(--accent);}
+.btn.brun{border-color:var(--ok);color:var(--ok);}
+.btn.brun:hover{background:#39ff1415;}
+.btn.bstop{border-color:var(--rapid);color:var(--rapid);}
+.btn.ton{border-color:var(--accent);color:var(--accent);background:#00c8ff12;}
+/* Work Offset Panel */
+.wo-panel{display:flex;align-items:center;gap:6px;padding:4px 10px;background:#0a1018;border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap;}
+.wo-label{font-family:'Orbitron',sans-serif;font-size:0.55rem;letter-spacing:2px;color:#ff9a40;white-space:nowrap;}
+.wo-field{display:flex;align-items:center;gap:3px;font-size:0.65rem;color:var(--dim);}
+.wo-field input{width:60px;background:#0d1825;border:1px solid var(--border);color:#ff9a40;font-family:'Share Tech Mono',monospace;font-size:0.68rem;padding:2px 5px;outline:none;text-align:right;}
+.wo-field input:focus{border-color:#ff9a40;}
+.wo-btn{padding:3px 8px;border:1px solid #ff9a40;background:transparent;color:#ff9a40;font-family:'Share Tech Mono',monospace;font-size:0.62rem;cursor:pointer;letter-spacing:1px;}
+.wo-btn:hover{background:#ff9a4015;}
+.main{display:grid;grid-template-columns:310px 1fr;flex:1;overflow:hidden;min-height:0;}
+.left{border-right:1px solid var(--border);display:flex;flex-direction:column;background:var(--panel);min-height:0;}
+.ptitle{padding:5px 12px;font-family:'Orbitron',sans-serif;font-size:0.56rem;letter-spacing:3px;color:var(--dim);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;flex-shrink:0;}
+.ptitle::before{content:'';width:5px;height:5px;background:var(--accent);display:block;}
+.tbar{display:flex;flex-wrap:wrap;gap:4px;padding:5px 8px;border-bottom:1px solid var(--border);flex-shrink:0;}
+.ged{flex:1;display:flex;overflow:hidden;min-height:0;}
+.lnum{width:36px;padding:8px 4px 8px 0;text-align:right;font-size:0.68rem;line-height:1.52rem;color:var(--dim);border-right:1px solid var(--border);background:#060810;overflow:hidden;flex-shrink:0;user-select:none;}
+textarea#gc{flex:1;background:transparent;border:none;outline:none;color:var(--text);font-family:'Share Tech Mono',monospace;font-size:0.72rem;line-height:1.52rem;padding:8px;resize:none;overflow-y:auto;}
+.pbar-wrap{height:3px;background:var(--border);flex-shrink:0;}
+#pbar{height:100%;width:0%;background:linear-gradient(90deg,var(--cut),var(--accent));transition:width .04s;}
+.console{height:95px;border-top:1px solid var(--border);background:#06080c;padding:5px 10px;overflow-y:auto;font-size:0.64rem;line-height:1.55;flex-shrink:0;}
+.cl{display:flex;gap:7px;}
+.ts{color:var(--dim);}
+.ok .msg{color:var(--ok);}.err .msg{color:var(--rapid);}.info .msg{color:var(--accent);}.dim .msg{color:var(--dim);}.warn .msg{color:#ffa040;}
+.right{position:relative;background:#040608;overflow:hidden;}
+canvas#cv{display:block;width:100%;height:100%;}
+.vp-info{position:absolute;top:8px;left:10px;font-size:0.6rem;color:var(--dim);pointer-events:none;line-height:1.9;}
+.vp-info b{color:var(--text);}
+.vp-info .wo-disp{color:#ff9a40;}
+.vp-btns{position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:4px;}
+.legend{position:absolute;bottom:8px;right:8px;font-size:0.63rem;line-height:2.2;pointer-events:none;}
+.lg0{color:var(--rapid);}.lg1{color:var(--cut);}
+.scan{position:absolute;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:.07;animation:sc 8s linear infinite;pointer-events:none;}
+@keyframes sc{0%{top:0}100%{top:100%}}
+.corner{position:absolute;width:12px;height:12px;pointer-events:none;}
+.tl{top:0;left:0;border-top:2px solid var(--accent);border-left:2px solid var(--accent);}
+.tr{top:0;right:0;border-top:2px solid var(--accent);border-right:2px solid var(--accent);}
+.bl{bottom:0;left:0;border-bottom:2px solid var(--accent);border-left:2px solid var(--accent);}
+.br{bottom:0;right:0;border-bottom:2px solid var(--accent);border-right:2px solid var(--accent);}
+input[type=range]{-webkit-appearance:none;width:70px;height:3px;background:var(--border);outline:none;border-radius:2px;margin:0 4px;}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;border-radius:50%;background:var(--accent);cursor:pointer;}
+/* Camera info panel */
+.cam-panel{flex-shrink:0;background:#070a0e;border-top:1px solid var(--border);padding:7px 10px;}
+.cam-row{display:flex;align-items:center;gap:5px;}
+.cam-label{font-size:0.55rem;color:var(--dim);letter-spacing:1px;}
+.cam-val{font-size:0.72rem;color:var(--accent);min-width:42px;letter-spacing:1px;}
+.cbtn{padding:3px 9px;border:1px solid var(--border);background:transparent;color:var(--text);font-family:'Share Tech Mono',monospace;font-size:0.65rem;cursor:pointer;letter-spacing:1px;transition:all .15s;white-space:nowrap;}
+.cbtn:hover{border-color:var(--accent);color:var(--accent);}
+.cbtn.ton2{border-color:var(--accent);color:var(--accent);background:#00c8ff14;}
+.cam-sep{width:1px;height:16px;background:var(--border);margin:0 2px;}
+/* Tool panel */
+.tool-panel{display:flex;align-items:center;gap:8px;padding:4px 10px;background:#0a0e14;border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap;}
+.tool-label{font-family:'Orbitron',sans-serif;font-size:0.55rem;letter-spacing:2px;color:#40d0c0;white-space:nowrap;}
+.tool-field{display:flex;align-items:center;gap:4px;font-size:0.65rem;color:var(--dim);}
+.tool-field input{width:52px;background:#0d1825;border:1px solid var(--border);color:#40d0c0;font-family:'Share Tech Mono',monospace;font-size:0.68rem;padding:2px 5px;outline:none;text-align:right;}
+.tool-field input:focus{border-color:#40d0c0;}
+.tool-field select{background:#0d1825;border:1px solid var(--border);color:#40d0c0;font-family:'Share Tech Mono',monospace;font-size:0.68rem;padding:2px 4px;outline:none;cursor:pointer;}
+.tool-field select:focus{border-color:#40d0c0;}
+.tool-btn{padding:3px 8px;border:1px solid #40d0c0;background:transparent;color:#40d0c0;font-family:'Share Tech Mono',monospace;font-size:0.62rem;cursor:pointer;letter-spacing:1px;}
+.tool-btn:hover{background:#40d0c015;}
+.tool-shape-disp{font-size:0.62rem;color:var(--dim);margin-left:4px;}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">CNC<em>SIM</em>&nbsp;//&nbsp;GANTRY</div>
+  <div class="dro">
+    <div class="dro-item">
+      <span style="font-size:.55rem;color:var(--dim)">WORK X</span>
+      <span class="dro-val" id="hx">0.000</span>
+      <span class="dro-mach" id="hmx">MCH:0.000</span>
+    </div>
+    <div class="dro-item">
+      <span style="font-size:.55rem;color:var(--dim)">WORK Y</span>
+      <span class="dro-val" id="hy">0.000</span>
+      <span class="dro-mach" id="hmy">MCH:0.000</span>
+    </div>
+    <div class="dro-item">
+      <span style="font-size:.55rem;color:var(--dim)">WORK Z</span>
+      <span class="dro-val" id="hz">0.000</span>
+      <span class="dro-mach" id="hmz">MCH:0.000</span>
+    </div>
+    <div class="dro-item">
+      <span style="font-size:.55rem;color:var(--dim)">FEED</span>
+      <span class="dro-val" id="hf">--</span>
+    </div>
+  </div>
+  <div class="badge" id="mbadge">IDLE</div>
+  <div class="hbtns">
+    <button class="btn" onclick="resetSim()">RESET</button>
+    <button class="btn" onclick="stepSim()">STEP</button>
+    <button class="btn brun" id="btnrun" onclick="toggleRun()">&#9654; RUN</button>
+    <button class="btn bstop" onclick="stopSim()">&#9632; STOP</button>
+    <span style="font-size:.6rem;color:var(--dim)">SPD</span>
+    <input type="range" id="spd" min="1" max="100" value="50">
+    <span style="font-size:.6rem;color:var(--dim)" id="spd-lbl">x1</span>
+  </div>
+</header>
+
+<!-- Work Offset + Material Panel -->
+<div class="wo-panel">
+  <span class="wo-label">MATERIAL</span>
+  <div class="wo-field">X<input type="number" id="mat-x" value="300" min="1" step="1" title="材料X寸法(mm)">mm</div>
+  <div class="wo-field">Y<input type="number" id="mat-y" value="300"  min="1" step="1" title="材料Y寸法(mm)">mm</div>
+  <div class="wo-field">Z<input type="number" id="mat-z" value="12"   min="1" step="0.1" title="材料Z寸法(mm)">mm</div>
+  <div style="width:1px;height:16px;background:var(--border);margin:0 4px"></div>
+  <span class="wo-label" style="margin-left:2px">WORK OFFSET (G54)</span>
+  <div class="wo-field">X<input type="number" id="wox" value="100" step="0.001" title="ワーク原点X(機械座標)"></div>
+  <div class="wo-field">Y<input type="number" id="woy" value="100" step="0.001" title="ワーク原点Y(機械座標)"></div>
+  <div class="wo-field" title="Z=材料厚み(自動)">Z<input type="number" id="woz" step="0.001" readonly style="color:#3a8060;cursor:default"></div>
+  <button class="wo-btn" onclick="applyAll()">APPLY</button>
+  <button class="wo-btn" onclick="resetAll()">RESET</button>
+  <span style="font-size:.58rem;color:var(--dim);margin-left:6px">
+    BASE上に材料配置 / WO=(X,Y)=材料左下, Z=材料天面(=材料厚み) / G-code Z0=材料表面
+  </span>
+</div>
+
+<!-- Tool Panel -->
+<div class="tool-panel">
+  <span class="tool-label">TOOL</span>
+  <div class="tool-field">
+    <span>径</span>
+    <input type="number" id="tool-dia" value="6" min="0.1" max="100" step="0.1">
+    <span>mm</span>
+  </div>
+  <div class="tool-field">
+    <span>形状</span>
+    <select id="tool-type" onchange="applyTool()">
+      <option value="flat" selected>フラット</option>
+      <option value="ball">ボール</option>
+      <option value="v90">V90°</option>
+      <option value="v60">V60°</option>
+    </select>
+  </div>
+  <button class="tool-btn" onclick="applyTool()">APPLY</button>
+  <span class="tool-shape-disp" id="tool-disp">フラット ⌀6mm</span>
+</div>
+
+<div class="main">
+  <div class="left">
+    <div class="ptitle">G-CODE EDITOR</div>
+    <div class="tbar">
+      <button class="btn" onclick="loadExample()">EXAMPLE</button>
+      <button class="btn" onclick="clearCode()">CLEAR</button>
+      <label class="btn" style="cursor:pointer">LOAD<input type="file" accept=".nc,.gcode,.txt,.ncc" style="display:none" onchange="loadFile(event)"></label>
+    </div>
+    <div class="ged">
+      <div class="lnum" id="ln">1</div>
+      <textarea id="gc" spellcheck="false" oninput="updLN()" onscroll="syncScroll()"
+        placeholder="; G-Code を入力&#10;; ワーク座標で記述&#10;G28&#10;G0 X0 Y0 Z5&#10;G1 X100 Y100 F2000&#10;G2 X0 Y0 I-50 J0"></textarea>
+    </div>
+    <div class="pbar-wrap"><div id="pbar"></div></div>
+    <div class="console" id="con"></div>
+
+    <!-- Camera info panel -->
+    <div class="cam-panel">
+      <div class="cam-row">
+        <span class="cam-label">AZIMUTH</span>
+        <span class="cam-val" id="cam-az">0.0°</span>
+        <span class="cam-label" style="margin-left:8px">ELEV</span>
+        <span class="cam-val" id="cam-el">0.0°</span>
+        <span class="cam-label" style="margin-left:8px">ZOOM</span>
+        <span class="cam-val" id="cam-zm">1.00x</span>
+      </div>
+      <div class="cam-row" style="margin-top:5px;gap:4px;flex-wrap:wrap;">
+        <button class="cbtn ton2" id="btn-persp" onclick="setProj('persp')" title="パース投影">PERSP</button>
+        <button class="cbtn" id="btn-ortho" onclick="setProj('ortho')" title="正投影">ORTHO</button>
+        <div class="cam-sep"></div>
+        <button class="cbtn" onclick="setView('home')"  title="ホームビュー">HOME</button>
+        <button class="cbtn" onclick="setView('top')"   title="上面">TOP</button>
+        <button class="cbtn" onclick="setView('front')" title="正面">FRONT</button>
+        <button class="cbtn" onclick="setView('right')" title="右面">RIGHT</button>
+        <button class="cbtn" onclick="setView('iso')"   title="アイソメ">ISO</button>
+      </div>
+    </div>
+  </div>
+  <div class="right" id="vp">
+    <canvas id="cv"></canvas>
+    <div class="corner tl"></div><div class="corner tr"></div>
+    <div class="corner bl"></div><div class="corner br"></div>
+    <div class="scan"></div>
+    <div class="vp-info">
+      機械テーブル: X<b>2350</b> Y<b>1200</b> Z<b>150</b> mm<br>
+      WO/MAT: <span class="wo-disp" id="vp-wo">WO X100 Y100 Z12 / MAT 300x300x12</span><br>
+      [左ドラッグ:パン] [中ボタン:回転] [スクロール:ズーム]
+    </div>
+    <div class="vp-btns">
+      <button class="btn ton" id="btn-base" onclick="toggleBase()">BASE ON</button>
+      <button class="btn ton" id="btn-work" onclick="toggleWork()">WORK ON</button>
+      <button class="btn" onclick="clearHM()" style="border-color:#ffa040;color:#ffa040" title="切削シミュレーションをリセット">HM RESET</button>
+      <button class="btn ton" id="btn-mill" onclick="toggleMill()">MILL ON</button>
+      <button class="btn ton" id="btn-path" onclick="togglePath()">PATH ON</button>
+    </div>
+    <div class="legend">
+      <div class="lg0">&#9473;&#9473; G0 RAPID (機械座標)</div>
+      <div class="lg1">&#9473;&#9473; G1/G2/G3 CUT</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+// ================================================================
+// Machine dimensions (mm) — all internal coords are MACHINE coords
+// ================================================================
+var MX=2350,MY=1200,MZ=150,BASE_T=30,MILL_H=45,MILL_SEG=20;
+var ARC_SEG=72;
+
+// ================================================================
+// Material (workpiece) size — placed on BASE (machine Z=0 = BASE top)
+//   bottom face = machine Z=0
+//   top face    = machine Z=+MAT.z  ← this IS the WO.z (G-code Z0)
+// ================================================================
+var MAT={x:300,y:300,z:12}; // width, depth, thickness (mm)
+
+// Work Offset — machine coords of the G-code origin
+// WO.z = material thickness → G-code Z=0 sits on material top face
+var WO={x:100,y:100,z:12};
+
+// Convert G-code (work) coords → machine coords
+function w2m(wx,wy,wz){return{x:wx+WO.x, y:wy+WO.y, z:wz+WO.z};}
+
+// Rebuild workpiece geometry: bottom=machine Z=0, top=machine Z=MAT.z
+// XY origin = WO.x, WO.y (G-code X0Y0 corner of the material)
+function rebuildWork(){
+  gWork=bBox(WO.x, WO.y, 0, WO.x+MAT.x, WO.y+MAT.y, MAT.z);
+}
+
+// Apply both material size and work offset together
+window.applyAll=function(){
+  MAT.x=parseFloat(document.getElementById('mat-x').value)||300;
+  MAT.y=parseFloat(document.getElementById('mat-y').value)||300;
+  MAT.z=parseFloat(document.getElementById('mat-z').value)||12;
+  WO.x =parseFloat(document.getElementById('wox').value)||100;
+  WO.y =parseFloat(document.getElementById('woy').value)||100;
+  // WO.z is always = MAT.z (material top surface = G-code Z0)
+  WO.z=MAT.z;
+  document.getElementById('woz').value=WO.z;
+  updWODisp();
+  rebuildWork();
+  hmInit();
+  clog('info','材料: '+MAT.x+'x'+MAT.y+'x'+MAT.z+'mm  WO: X'+WO.x+' Y'+WO.y+' Z'+WO.z);
+  render();
+};
+// Keep applyWO as alias so old calls still work
+window.applyWO=window.applyAll;
+
+window.resetAll=function(){
+  document.getElementById('mat-x').value=300;
+  document.getElementById('mat-y').value=300;
+  document.getElementById('mat-z').value=12;
+  document.getElementById('wox').value=100;
+  document.getElementById('woy').value=100;
+  document.getElementById('woz').value=12;
+  window.applyAll();
+};
+window.resetWO=window.resetAll;
+
+function updWODisp(){
+  document.getElementById('vp-wo').textContent=
+    'WO X'+WO.x+' Y'+WO.y+' Z'+WO.z+' / MAT '+MAT.x+'x'+MAT.y+'x'+MAT.z;
+}
+
+// ================================================================
+// WebGL
+// ================================================================
+var cv=document.getElementById('cv');
+var vpEl=document.getElementById('vp');
+var gl=cv.getContext('webgl',{antialias:true,alpha:false})||cv.getContext('experimental-webgl',{antialias:true,alpha:false});
+if(!gl){alert('WebGLが使えません');return;}
+
+function csh(type,src){
+  var s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){console.error(gl.getShaderInfoLog(s));return null;}
+  return s;
+}
+function mkProg(vs,fs){
+  var p=gl.createProgram();
+  var v=csh(gl.VERTEX_SHADER,vs),f=csh(gl.FRAGMENT_SHADER,fs);
+  if(!v||!f)return null;
+  gl.attachShader(p,v);gl.attachShader(p,f);gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS)){console.error(gl.getProgramInfoLog(p));return null;}
+  return p;
+}
+var PL=mkProg(
+  'attribute vec3 aP;attribute vec3 aC;uniform mat4 uM;varying vec3 vC;void main(){gl_Position=uM*vec4(aP,1.0);vC=aC;}',
+  'precision mediump float;varying vec3 vC;void main(){gl_FragColor=vec4(vC,1.0);}'
+);
+var PS=mkProg(
+  'attribute vec3 aP;attribute vec3 aN;uniform mat4 uM;varying vec3 vN;void main(){gl_Position=uM*vec4(aP,1.0);vN=aN;}',
+  'precision mediump float;uniform vec3 uC;uniform float uA;varying vec3 vN;void main(){vec3 L=normalize(vec3(0.5,0.8,0.6));float d=max(dot(normalize(vN),L),0.0);gl_FragColor=vec4(uC*(0.3+0.7*d),uA);}'
+);
+if(!PL||!PS){alert('Shader compile failed');return;}
+var PL_P=gl.getAttribLocation(PL,'aP'),PL_C=gl.getAttribLocation(PL,'aC'),PL_M=gl.getUniformLocation(PL,'uM');
+var PS_P=gl.getAttribLocation(PS,'aP'),PS_N=gl.getAttribLocation(PS,'aN'),PS_M=gl.getUniformLocation(PS,'uM'),PS_C=gl.getUniformLocation(PS,'uC'),PS_A=gl.getUniformLocation(PS,'uA');
+
+// ================================================================
+// Math
+// ================================================================
+function I4(){return new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);}
+function mm4(a,b){
+  var r=new Float32Array(16);
+  for(var c=0;c<4;c++)for(var row=0;row<4;row++){var s=0;for(var k=0;k<4;k++)s+=a[row+k*4]*b[k+c*4];r[row+c*4]=s;}
+  return r;
+}
+function mPersp(fov,asp,n,f){var t=1/Math.tan(fov/2),nf=1/(n-f);return new Float32Array([t/asp,0,0,0,0,t,0,0,0,0,(f+n)*nf,-1,0,0,2*f*n*nf,0]);}
+function mRX(a){var c=Math.cos(a),s=Math.sin(a);return new Float32Array([1,0,0,0,0,c,s,0,0,-s,c,0,0,0,0,1]);}
+function mRY(a){var c=Math.cos(a),s=Math.sin(a);return new Float32Array([c,0,-s,0,0,1,0,0,s,0,c,0,0,0,0,1]);}
+function mT(x,y,z){var m=I4();m[12]=x;m[13]=y;m[14]=z;return m;}
+function mS(x,y,z){var m=I4();m[0]=x;m[5]=y;m[10]=z;return m;}
+
+// ================================================================
+// Projection: perspective (default) or orthographic
+// ================================================================
+var projMode='persp'; // 'persp' | 'ortho'
+
+function mOrtho(l,r,b,t,n,f){
+  // column-major orthographic matrix
+  return new Float32Array([
+    2/(r-l),0,0,0,
+    0,2/(t-b),0,0,
+    0,0,-2/(f-n),0,
+    -(r+l)/(r-l),-(t+b)/(t-b),-(f+n)/(f-n),1
+  ]);
+}
+function getProj(){
+  var asp=cv.width/cv.height;
+  if(projMode==='ortho'){
+    // scale ortho size with cam.dist so zoom still works
+    var h=cam.dist*0.435, w=h*asp;
+    return mOrtho(-w,w,-h,h,0.002,50);
+  }
+  return mPersp(0.82,asp,0.002,50);
+}
+
+window.setProj=function(m){
+  projMode=m;
+  var bp=document.getElementById('btn-persp');
+  var bo=document.getElementById('btn-ortho');
+  if(m==='persp'){bp.className='cbtn ton2';bo.className='cbtn';}
+  else           {bo.className='cbtn ton2';bp.className='cbtn';}
+  render();updCamInfo();
+};
+
+// Preset views
+window.setView=function(v){
+  if(v==='home') {cam.rx=-0.48;cam.ry= 0.58;cam.dist=2.8;cam.panX=0;cam.panY=0;}
+  else if(v==='top')  {cam.rx=-Math.PI/2+0.01;cam.ry=0;cam.dist=2.8;cam.panX=0;cam.panY=0;}
+  else if(v==='front'){cam.rx=-0.01;cam.ry=0;cam.dist=2.8;cam.panX=0;cam.panY=0;}
+  else if(v==='right'){cam.rx=-0.01;cam.ry=Math.PI/2;cam.dist=2.8;cam.panX=0;cam.panY=0;}
+  else if(v==='iso')  {cam.rx=-0.6155;cam.ry=Math.PI/4;cam.dist=2.8;cam.panX=0;cam.panY=0;}
+  render();updCamInfo();
+};
+
+// Update camera info display
+function updCamInfo(){
+  // Azimuth: ry in degrees (0-360), Elevation: -rx converted from rad
+  var az=((cam.ry*180/Math.PI)%360+360)%360;
+  var el=(-cam.rx*180/Math.PI);
+  // Zoom: reference dist 1.35 → 1.00x
+  var zm=(2.8/cam.dist);
+  document.getElementById('cam-az').textContent=az.toFixed(1)+'°';
+  document.getElementById('cam-el').textContent=el.toFixed(1)+'°';
+  document.getElementById('cam-zm').textContent=zm.toFixed(2)+'x';
+}
+
+// ================================================================
+// Camera
+//   左ボタンドラッグ : パン（平行移動）
+//   中ボタンドラッグ : オービット（回転）
+//   スクロール       : ズーム（カーソル中心）
+// ================================================================
+var cam={rx:-0.48,ry:0.58,dist:2.8,panX:0,panY:0};
+var camDrag=null;
+
+vpEl.addEventListener('contextmenu',function(e){e.preventDefault();});
+
+vpEl.addEventListener('mousedown',function(e){
+  e.preventDefault();
+  if(e.button===0){
+    // 左ボタン → Pan
+    camDrag={mode:'pan',x:e.clientX,y:e.clientY,px:cam.panX,py:cam.panY};
+  } else if(e.button===1){
+    // 中ボタン → Orbit
+    camDrag={mode:'orbit',x:e.clientX,y:e.clientY,rx:cam.rx,ry:cam.ry};
+  }
+});
+
+window.addEventListener('mousemove',function(e){
+  if(!camDrag)return;
+  var dx=e.clientX-camDrag.x;
+  var dy=e.clientY-camDrag.y;
+  if(camDrag.mode==='orbit'){
+    // 横ドラッグ → 水平回転(ry)、縦ドラッグ → 仰角(rx)
+    // 右に動かすと右回転、上に動かすと見下ろし角が増える
+    cam.ry=camDrag.ry + dx*0.007;
+    cam.rx=Math.max(-1.55,Math.min(-0.02, camDrag.rx + dy*0.007));
+  } else if(camDrag.mode==='pan'){
+    // パン: ドラッグ方向と同方向に移動
+    // panX/panY はビュー行列の translate に入るので符号に注意
+    // view = T(panX,panY,-dist) * RX * RY
+    // カメラ右方向 = RY の X列, 上方向 = RX*RY の Y列
+    // 近似として画面ピクセル → NDU 変換のみ行う
+    var sc = cam.dist * 0.0012;
+    cam.panX = camDrag.px + dx * sc;
+    cam.panY = camDrag.py - dy * sc;
+  }
+  render();
+});
+
+window.addEventListener('mouseup',function(e){
+  if(e.button===0||e.button===1) camDrag=null;
+});
+
+// Zoom: scroll wheel, zoom toward/away from mouse cursor position
+// We compute the NDC position of the cursor and shift pan accordingly
+vpEl.addEventListener('wheel',function(e){
+  e.preventDefault();
+  var zoomFactor = e.deltaY > 0 ? 1.12 : 0.89; // ~12% per notch
+  var oldDist = cam.dist;
+  var newDist = Math.max(0.15, Math.min(10, cam.dist * zoomFactor));
+
+  // Shift pan so the point under the cursor stays fixed
+  var rect = vpEl.getBoundingClientRect();
+  var ndcX = ((e.clientX - rect.left) / rect.width  - 0.5) * 2;
+  var ndcY = -((e.clientY - rect.top)  / rect.height - 0.5) * 2;
+  var aspect = cv.width / cv.height;
+  if(projMode==='ortho'){
+    // In ortho: world offset is directly proportional to dist (half-height = dist*0.5)
+    var dh = (oldDist - newDist) * 0.435;
+    cam.panX += ndcX * dh * aspect;
+    cam.panY += ndcY * dh;
+  } else {
+    var fovTan = Math.tan(0.82/2);
+    // カーソル下の点が固定されるようパンを補正
+    // panX,panY はビュー空間なので直接NDC→距離変換でOK
+    var fw = Math.tan(0.82/2);
+    cam.panX += ndcX * fw * aspect * (oldDist - newDist);
+    cam.panY += ndcY * fw           * (oldDist - newDist);
+  }
+  cam.dist = newDist;
+  render();
+},{passive:false});
+
+// Touch: 1-finger orbit, 2-finger pan+pinch-zoom
+var touch0=null, touch1=null;
+vpEl.addEventListener('touchstart',function(e){
+  if(e.touches.length===1){
+    touch0={x:e.touches[0].clientX,y:e.touches[0].clientY,rx:cam.rx,ry:cam.ry};
+    touch1=null;
+  } else if(e.touches.length===2){
+    touch0={x:e.touches[0].clientX,y:e.touches[0].clientY};
+    touch1={x:e.touches[1].clientX,y:e.touches[1].clientY,
+            dist:Math.hypot(e.touches[1].clientX-e.touches[0].clientX,
+                            e.touches[1].clientY-e.touches[0].clientY),
+            px:cam.panX,py:cam.panY,d:cam.dist};
+  }
+},{passive:true});
+vpEl.addEventListener('touchmove',function(e){
+  e.preventDefault();
+  if(e.touches.length===1 && touch0 && !touch1){
+    // 1-finger → orbit
+    cam.ry=touch0.ry+(e.touches[0].clientX-touch0.x)*0.009;
+    cam.rx=Math.max(-1.55,Math.min(-0.04,touch0.rx+(e.touches[0].clientY-touch0.y)*0.009));
+  } else if(e.touches.length===2 && touch1){
+    // 2-finger → pinch zoom + pan
+    var cx=(e.touches[0].clientX+e.touches[1].clientX)/2;
+    var cy=(e.touches[0].clientY+e.touches[1].clientY)/2;
+    var cx0=(touch0.x+touch1.x)/2;
+    var cy0=(touch0.y+touch1.y)/2;
+    var d=Math.hypot(e.touches[1].clientX-e.touches[0].clientX,
+                     e.touches[1].clientY-e.touches[0].clientY);
+    cam.dist=Math.max(0.15,Math.min(10, touch1.d*(touch1.dist/d)));
+    var sc=cam.dist*0.0013;
+    cam.panX=touch1.px-(cx-cx0)*sc;
+    cam.panY=touch1.py+(cy-cy0)*sc;
+  }
+  render();
+},{passive:false});
+vpEl.addEventListener('touchend',function(e){
+  if(e.touches.length===0){touch0=null;touch1=null;}
+  else if(e.touches.length===1){
+    touch0={x:e.touches[0].clientX,y:e.touches[0].clientY,rx:cam.rx,ry:cam.ry};
+    touch1=null;
+  }
+});
+
+// Model matrix: UNIFORM scale  1mm = 1/MX NDU on all axes
+var MSCALE=1.0/2350.0;
+function getModel(){
+  return mm4(mT(-0.5,-MY/(2.0*MX),0.0), mS(MSCALE,MSCALE,MSCALE));
+}
+function getView(){
+  // パン(panX,panY)はビュー空間(カメラローカル)で適用
+  // → 画面の水平/垂直方向と常に一致する直感的なパン
+  return mm4(mT(cam.panX, cam.panY, -cam.dist), mm4(mRX(cam.rx), mRY(cam.ry)));
+}
+function getMVP(){
+  return mm4(getProj(), mm4(getView(),getModel()));
+}
+// MVP for endmill positioned at machine coords mx,my,mz
+function getMillMVP(mx,my,mz){
+  return mm4(getProj(), mm4(getView(), mm4(getModel(),mT(mx,my,mz))));
+}
+
+// ================================================================
+// Buffer helpers
+// ================================================================
+function mkLB(data){
+  if(!data||data.length===0)return null;
+  var b=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,b);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data),gl.DYNAMIC_DRAW);
+  return{b:b,n:data.length/6};
+}
+function upLB(lb,data){
+  if(!data||data.length===0)return null;
+  if(!lb)lb={b:gl.createBuffer(),n:0};
+  gl.bindBuffer(gl.ARRAY_BUFFER,lb.b);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data),gl.DYNAMIC_DRAW);
+  lb.n=data.length/6;return lb;
+}
+function drawL(lb,mvp){
+  if(!lb||!lb.b||lb.n===0)return;
+  gl.useProgram(PL);gl.uniformMatrix4fv(PL_M,false,mvp);
+  gl.bindBuffer(gl.ARRAY_BUFFER,lb.b);
+  gl.enableVertexAttribArray(PL_P);gl.enableVertexAttribArray(PL_C);
+  gl.vertexAttribPointer(PL_P,3,gl.FLOAT,false,24,0);
+  gl.vertexAttribPointer(PL_C,3,gl.FLOAT,false,24,12);
+  gl.drawArrays(gl.LINES,0,lb.n);
+}
+function mkSB(verts,idxs){
+  var vb=gl.createBuffer();if(!vb)return null;
+  gl.bindBuffer(gl.ARRAY_BUFFER,vb);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(verts),gl.STATIC_DRAW);
+  var ib=gl.createBuffer();if(!ib)return null;
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(idxs),gl.STATIC_DRAW);
+  return{vb:vb,ib:ib,n:idxs.length};
+}
+function drawS(sb,mvp,color,alpha){
+  if(!sb||!sb.vb||!sb.ib)return;
+  gl.useProgram(PS);gl.uniformMatrix4fv(PS_M,false,mvp);
+  gl.uniform3fv(PS_C,color);gl.uniform1f(PS_A,alpha);
+  gl.bindBuffer(gl.ARRAY_BUFFER,sb.vb);
+  gl.enableVertexAttribArray(PS_P);gl.enableVertexAttribArray(PS_N);
+  gl.vertexAttribPointer(PS_P,3,gl.FLOAT,false,24,0);
+  gl.vertexAttribPointer(PS_N,3,gl.FLOAT,false,24,12);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,sb.ib);
+  gl.drawElements(gl.TRIANGLES,sb.n,gl.UNSIGNED_SHORT,0);
+}
+
+// ================================================================
+// Geometry builders — all in MACHINE coords (mm)
+// ================================================================
+function bGrid(){
+  var v=[];
+  var DIM=[0.06,0.10,0.14],MID=[0.11,0.18,0.26],BRT=[0.17,0.28,0.40];
+  for(var y=0;y<=MY;y+=10){
+    var col=(y%100===0)?BRT:(y%50===0)?MID:DIM;
+    v.push(0,y,0,col[0],col[1],col[2],MX,y,0,col[0],col[1],col[2]);
+  }
+  for(var x=0;x<=MX;x+=10){
+    var col=(x%100===0)?BRT:(x%50===0)?MID:DIM;
+    v.push(x,0,0,col[0],col[1],col[2],x,MY,0,col[0],col[1],col[2]);
+  }
+  v.push(0,0,0,0.9,0.15,0.15,80,0,0,0.9,0.15,0.15);
+  v.push(0,0,0,0.15,0.9,0.15,0,80,0,0.15,0.9,0.15);
+  v.push(0,0,0,0.15,0.45,0.9,0,0,80,0.15,0.45,0.9);
+  var ws=40;
+  // Work origin marker on top surface of material (machine Z = MAT.z)
+  var wz=MAT.z;
+  v.push(WO.x-ws,WO.y,wz,1,0.6,0.1,WO.x+ws,WO.y,wz,1,0.6,0.1);
+  v.push(WO.x,WO.y-ws,wz,1,0.6,0.1,WO.x,WO.y+ws,wz,1,0.6,0.1);
+  v.push(WO.x,WO.y,wz,1,0.6,0.1,WO.x,WO.y,wz+80,1,0.6,0.1);
+  return mkLB(v);
+}
+
+function bGantry(mx,my,mz){
+  var v=[],BC=[0.0,0.55,0.80],RC=[0.70,0.38,0.04],ZC=[0.40,0.85,0.18];
+  // Y rails
+  v.push(0,0,0,RC[0],RC[1],RC[2],0,MY,0,RC[0],RC[1],RC[2]);
+  v.push(MX,0,0,RC[0],RC[1],RC[2],MX,MY,0,RC[0],RC[1],RC[2]);
+  // X beam at current Y
+  v.push(0,my,0,BC[0],BC[1],BC[2],MX,my,0,BC[0],BC[1],BC[2]);
+  // Z column
+  v.push(mx,my,0,ZC[0],ZC[1],ZC[2],mx,my,MZ,ZC[0],ZC[1],ZC[2]);
+  // Tool cross
+  var s=16;
+  v.push(mx-s,my,mz,ZC[0],ZC[1],ZC[2],mx+s,my,mz,ZC[0],ZC[1],ZC[2]);
+  v.push(mx,my-s,mz,ZC[0],ZC[1],ZC[2],mx,my+s,mz,ZC[0],ZC[1],ZC[2]);
+  return mkLB(v);
+}
+
+function bBox(x0,y0,z0,x1,y1,z1){
+  var faces=[
+    [[x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0],[0,0,-1]],
+    [[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1],[0,0,1]],
+    [[x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1],[0,-1,0]],
+    [[x0,y1,z0],[x1,y1,z0],[x1,y1,z1],[x0,y1,z1],[0,1,0]],
+    [[x0,y0,z0],[x0,y1,z0],[x0,y1,z1],[x0,y0,z1],[-1,0,0]],
+    [[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],[x1,y0,z1],[1,0,0]]
+  ];
+  var verts=[],idxs=[],vi=0;
+  for(var fi=0;fi<faces.length;fi++){
+    var f=faces[fi],n=f[4];
+    for(var pi=0;pi<4;pi++){var p=f[pi];verts.push(p[0],p[1],p[2],n[0],n[1],n[2]);}
+    idxs.push(vi,vi+1,vi+2,vi,vi+2,vi+3);vi+=4;
+  }
+  return mkSB(verts,idxs);
+}
+
+// ================================================================
+// Tool geometry builders
+// All tool tips are at local Z=0, shank extends upward to Z=+h
+// ================================================================
+
+// Shared: cylindrical shank portion (from z=zBot to z=h)
+function addShank(verts,idxs,r,zBot,h,seg){
+  var base=verts.length/6;
+  for(var i=0;i<=seg;i++){
+    var a=i/seg*Math.PI*2,nx=Math.cos(a),ny=Math.sin(a);
+    verts.push(nx*r,ny*r,zBot, nx,ny,0);
+    verts.push(nx*r,ny*r,h,   nx,ny,0);
+  }
+  for(var i=0;i<seg;i++){var b=base+i*2;idxs.push(b,b+2,b+1,b+1,b+2,b+3);}
+  // top cap
+  var tc=verts.length/6;
+  verts.push(0,0,h,0,0,1);
+  for(var i=0;i<=seg;i++){var a=i/seg*Math.PI*2;verts.push(Math.cos(a)*r,Math.sin(a)*r,h,0,0,1);}
+  for(var i=0;i<seg;i++)idxs.push(tc,tc+1+i,tc+2+i);
+}
+
+// Flat endmill: cylinder, flat bottom at Z=0
+function bFlat(r,h,seg){
+  var verts=[],idxs=[];
+  addShank(verts,idxs,r,0,h,seg);
+  // bottom cap (flat face at Z=0)
+  var bc=verts.length/6;
+  verts.push(0,0,0,0,0,-1);
+  for(var i=0;i<=seg;i++){var a=i/seg*Math.PI*2;verts.push(Math.cos(a)*r,Math.sin(a)*r,0,0,0,-1);}
+  for(var i=0;i<seg;i++)idxs.push(bc,bc+2+i,bc+1+i);
+  return mkSB(verts,idxs);
+}
+
+// Ball endmill: hemisphere bottom (radius r), tip at Z=0
+function bBall(r,h,seg){
+  var verts=[],idxs=[];
+  var hSeg=Math.max(8,Math.floor(seg/2));
+  // hemisphere: latitude rings from Z=-r (tip) to Z=0 (equator)
+  for(var lat=0;lat<=hSeg;lat++){
+    var phi=Math.PI/2*(lat/hSeg); // 0 = tip, PI/2 = equator
+    var rRing=Math.cos(phi)*r;
+    var zRing=-Math.sin(phi)*r+r; // shift so tip is at Z=0
+    // Actually: at lat=0 phi=0 → rRing=r zRing=r (equator side)
+    // we want tip at bottom: use phi from PI/2 down to 0
+    phi=(Math.PI/2)*(1-lat/hSeg);
+    rRing=Math.cos(phi)*r;
+    var zOff=r-Math.sin(phi)*r; // Z goes from 0 (lat=0, tip) to r (lat=hSeg, equator)
+    var nz=-Math.sin(phi);
+    for(var i=0;i<=seg;i++){
+      var a=i/seg*Math.PI*2;
+      var nx2=Math.cos(a)*Math.cos(phi),ny2=Math.sin(a)*Math.cos(phi);
+      verts.push(Math.cos(a)*rRing, Math.sin(a)*rRing, zOff, Math.cos(a)*Math.cos(phi), Math.sin(a)*Math.cos(phi), nz);
+    }
+  }
+  for(var lat=0;lat<hSeg;lat++){
+    for(var i=0;i<seg;i++){
+      var a=(lat)*(seg+1)+i, b=a+1, c2=a+(seg+1), d=c2+1;
+      idxs.push(a,c2,b, b,c2,d);
+    }
+  }
+  // shank above equator (from z=r to z=h)
+  addShank(verts,idxs,r,r,h,seg);
+  return mkSB(verts,idxs);
+}
+
+// V-bit: cone tip at Z=0, base circle at Z=depth, then shank to h
+// halfAngle: half-angle of V in degrees
+function bVBit(r,h,seg,halfAngleDeg){
+  var verts=[],idxs=[];
+  var ha=halfAngleDeg*Math.PI/180;
+  // depth of cone so that base radius = r at Z=depth
+  var depth=r/Math.tan(ha);
+  // cone side: tip at Z=0, base circle radius=r at Z=depth
+  var base=verts.length/6;
+  for(var i=0;i<=seg;i++){
+    var a=i/seg*Math.PI*2;
+    var cx=Math.cos(a),cy=Math.sin(a);
+    // normal for cone side: outward + upward component
+    var nl=Math.cos(Math.PI/2-ha); // normal Z component
+    var nr=Math.sin(Math.PI/2-ha); // normal R component
+    verts.push(0,0,0, 0,0,-1);                    // tip vertex (flat normal for sharp look)
+    verts.push(cx*r,cy*r,depth, cx*nr,cy*nr,-nl); // base ring vertex
+  }
+  for(var i=0;i<seg;i++){
+    var b=base+i*2;
+    idxs.push(b,b+2,b+3, b,b+3,b+1);
+  }
+  // base cap at Z=depth
+  var bc=verts.length/6;
+  verts.push(0,0,depth,0,0,-1);
+  for(var i=0;i<=seg;i++){var a=i/seg*Math.PI*2;verts.push(Math.cos(a)*r,Math.sin(a)*r,depth,0,0,-1);}
+  for(var i=0;i<seg;i++)idxs.push(bc,bc+2+i,bc+1+i);
+  // shank
+  addShank(verts,idxs,r,depth,h,seg);
+  return mkSB(verts,idxs);
+}
+
+// Build gMill from current tool settings
+var TOOL={dia:6,type:'flat'};
+function buildToolGeo(){
+  var r=TOOL.dia/2;
+  var h=MILL_H;
+  var seg=MILL_SEG;
+  if(TOOL.type==='flat') return bFlat(r,h,seg);
+  if(TOOL.type==='ball') return bBall(r,h,seg);
+  if(TOOL.type==='v90')  return bVBit(r,h,seg,45);
+  if(TOOL.type==='v60')  return bVBit(r,h,seg,30);
+  return bFlat(r,h,seg);
+}
+
+window.applyTool=function(){
+  var dia=parseFloat(document.getElementById('tool-dia').value);
+  var type=document.getElementById('tool-type').value;
+  if(!dia||dia<=0)dia=6;
+  TOOL.dia=dia; TOOL.type=type;
+  var names={'flat':'フラット','ball':'ボール','v90':'V90\u00b0','v60':'V60\u00b0'};
+  document.getElementById('tool-disp').textContent=names[type]+' \u2300'+dia+'mm';
+  gMill=buildToolGeo();
+  render();
+  var con=document.getElementById('con');
+  var d=document.createElement('div');d.className='cl info';
+  d.innerHTML='<span class="ts">[TOOL]</span><span class="msg"> '+names[type]+' \u2300'+dia+'mm \u30bb\u30c3\u30c8</span>';
+  con.appendChild(d);con.scrollTop=con.scrollHeight;
+};
+
+
+// ================================================================
+// HEIGHT MAP — Pattern 1: 2.5D CSG simulation
+//
+//   HM (CPU side): Float32Array[NX * NY]
+//     value = current top surface Z in WORK coords (init = MAT.z)
+//     cells that are cut have lower values
+//   hmTex (GPU side): GL_TEXTURE_2D, R32F (or LUMINANCE float fallback)
+//     uploaded after each batch update
+//
+//   Workpiece mesh: NX×NY grid of quads
+//     vertex Z driven by HM value via texture lookup in vertex shader
+//
+//   Per-segment update (CPU):
+//     For each XY cell within tool radius around segment:
+//       new_z = tool_z_at(dx, dy, tool_type, tool_r, seg_z_work)
+//       if new_z < hm[ix][iy]: hm[ix][iy] = new_z
+//
+//   Rendering:
+//     Heightmap mesh replaces the old gWork flat box.
+//     Top face uses displaced vertices; sides/bottom are static walls.
+// ================================================================
+var HM_RES = 1.0;       // mm per cell
+var HM={nx:0,ny:0,data:null,tex:null,dirty:false,meshBuf:null,sideBuf:null};
+
+// Initialise / reset heightmap to flat (= MAT.z in work coords)
+function hmInit(){
+  var nx=Math.ceil(MAT.x/HM_RES)+1;
+  var ny=Math.ceil(MAT.y/HM_RES)+1;
+  HM.nx=nx; HM.ny=ny;
+  HM.data=new Float32Array(nx*ny);
+  // init: all cells at MAT.z (= work Z 0 = uncut surface)
+  HM.data.fill(MAT.z);
+  HM.dirty=true;
+  hmBuildMesh();
+  hmUploadTex();
+}
+
+// Build the top-face mesh (NX×NY grid of quads) + side walls
+// Each vertex: [x, y, z, nx, ny, nz] = 6 floats (matching drawS convention)
+// z is set to MAT.z initially; the VERTEX SHADER displaces it via texture.
+// Since WebGL1 has no vertex texture fetch, we instead rebuild the CPU mesh
+// when dirty and re-upload. This is fast enough for 300x300 (90k cells).
+function hmBuildMesh(){
+  var nx=HM.nx,ny=HM.ny,d=HM.data;
+  var verts=[],idxs=[];
+  // Top face: one vertex per HM cell, Z from HM data (work coords + WO.z offset)
+  for(var iy=0;iy<ny;iy++){
+    for(var ix=0;ix<nx;ix++){
+      var wx=ix*HM_RES;        // work X
+      var wy=iy*HM_RES;        // work Y
+      var wz=d[iy*nx+ix];      // work Z (=MAT.z if uncut, less if cut)
+      // machine coords
+      var mx=wx+WO.x, my=wy+WO.y, mz=wz;
+      // approximate normal (computed from neighbours for lighting)
+      var dzdx=0,dzdy=0;
+      if(ix>0&&ix<nx-1) dzdx=(d[iy*nx+(ix+1)]-d[iy*nx+(ix-1)])/(2*HM_RES);
+      if(iy>0&&iy<ny-1) dzdy=(d[(iy+1)*nx+ix]-d[(iy-1)*nx+ix])/(2*HM_RES);
+      var len=Math.sqrt(dzdx*dzdx+dzdy*dzdy+1);
+      verts.push(mx,my,mz, -dzdx/len,-dzdy/len,1/len);
+    }
+  }
+  // Top face indices (two triangles per quad)
+  for(var iy=0;iy<ny-1;iy++){
+    for(var ix=0;ix<nx-1;ix++){
+      var a=iy*nx+ix, b=a+1, cc=a+nx, dd=cc+1;
+      if(a<65535&&b<65535&&cc<65535&&dd<65535){
+        idxs.push(a,cc,b, b,cc,dd);
+      }
+    }
+  }
+
+  // Side walls: 4 sides of the material box
+  // Use fixed height: bottom=machine Z=0, top=MAT.z at edges
+  var sx0=WO.x,sy0=WO.y,sx1=WO.x+MAT.x,sy1=WO.y+MAT.y,sz0=0,sz1=MAT.z;
+  var sideV=[],sideI=[],sv=0;
+  function addWall(x0,y0,z0,x1,y1,z1,x2,y2,z2,x3,y3,z3,nn){
+    sideV.push(x0,y0,z0,nn[0],nn[1],nn[2]);
+    sideV.push(x1,y1,z1,nn[0],nn[1],nn[2]);
+    sideV.push(x2,y2,z2,nn[0],nn[1],nn[2]);
+    sideV.push(x3,y3,z3,nn[0],nn[1],nn[2]);
+    sideI.push(sv,sv+1,sv+2,sv,sv+2,sv+3);sv+=4;
+  }
+  // front (y=sy0)
+  addWall(sx0,sy0,sz0, sx1,sy0,sz0, sx1,sy0,sz1, sx0,sy0,sz1, [0,-1,0]);
+  // back (y=sy1)
+  addWall(sx0,sy1,sz0, sx1,sy1,sz0, sx1,sy1,sz1, sx0,sy1,sz1, [0,1,0]);
+  // left (x=sx0)
+  addWall(sx0,sy0,sz0, sx0,sy1,sz0, sx0,sy1,sz1, sx0,sy0,sz1, [-1,0,0]);
+  // right (x=sx1)
+  addWall(sx1,sy0,sz0, sx1,sy1,sz0, sx1,sy1,sz1, sx1,sy0,sz1, [1,0,0]);
+  // bottom (z=0)
+  addWall(sx0,sy0,sz0, sx1,sy0,sz0, sx1,sy1,sz0, sx0,sy1,sz0, [0,0,-1]);
+
+  // Upload top face
+  if(idxs.length>0){
+    HM.meshBuf=mkSB(verts,idxs);
+  } else {
+    HM.meshBuf=null;
+  }
+  HM.sideBuf=mkSB(sideV,sideI);
+  HM.dirty=false;
+}
+
+// hmUploadTex — not used for rendering in WebGL1 (we rebuild mesh instead)
+function hmUploadTex(){} // placeholder for future WebGL2 upgrade
+
+// ================================================================
+// HEIGHT MAP UPDATE — called after each cutting segment
+// Only updates when tool is inside material (machine Z <= MAT.z)
+//
+// Inputs: machine coords of segment endpoints, tool type/radius
+// ================================================================
+function hmUpdateSeg(mx0,my0,mz0,mx1,my1,mz1){
+  if(!HM.data)return;
+  // Convert machine → work coords for HM indexing
+  var wx0=mx0-WO.x, wy0=my0-WO.y, wz0=mz0;
+  var wx1=mx1-WO.x, wy1=my1-WO.y, wz1=mz1;
+  var r=TOOL.dia/2;
+  var nx=HM.nx,ny=HM.ny,res=HM_RES;
+  var type=TOOL.type;
+
+  // Bounding box of segment in HM cell space (expanded by tool radius)
+  var minX=Math.min(wx0,wx1)-r, maxX=Math.max(wx0,wx1)+r;
+  var minY=Math.min(wy0,wy1)-r, maxY=Math.max(wy0,wy1)+r;
+  var ixMin=Math.max(0,Math.floor(minX/res));
+  var ixMax=Math.min(nx-1,Math.ceil(maxX/res));
+  var iyMin=Math.max(0,Math.floor(minY/res));
+  var iyMax=Math.min(ny-1,Math.ceil(maxY/res));
+  if(ixMin>ixMax||iyMin>iyMax)return;
+
+  // Segment length squared for projection
+  var dx=wx1-wx0, dy=wy1-wy0, dz=wz1-wz0;
+  var segLen2=dx*dx+dy*dy;
+
+  for(var iy=iyMin;iy<=iyMax;iy++){
+    for(var ix=ixMin;ix<=ixMax;ix++){
+      var cx=ix*res, cy=iy*res;
+      // Find closest point on segment (XY only)
+      var t=0;
+      if(segLen2>1e-10){
+        t=((cx-wx0)*dx+(cy-wy0)*dy)/segLen2;
+        t=Math.max(0,Math.min(1,t));
+      }
+      var px=wx0+t*dx, py=wy0+t*dy, pz=wz0+t*dz;
+      var ddx=cx-px, ddy=cy-py;
+      var d2=ddx*ddx+ddy*ddy;
+      if(d2>r*r)continue;
+      var dist=Math.sqrt(d2);
+
+      // Compute cut depth at this XY distance from tool centre
+      var cutZ; // in machine Z (= work Z since WO.z is already in pz via w2m)
+      if(type==='flat'){
+        cutZ=pz; // flat: all cells within radius cut to same Z
+      } else if(type==='ball'){
+        // ball: Z rises as sqrt(r²-d²) from tip
+        cutZ=pz+(r-Math.sqrt(Math.max(0,r*r-d2)));
+      } else if(type==='v90'){
+        cutZ=pz+dist/Math.tan(45*Math.PI/180);
+      } else if(type==='v60'){
+        cutZ=pz+dist/Math.tan(30*Math.PI/180);
+      } else {
+        cutZ=pz;
+      }
+
+      // Only cut if below current surface AND within material Z range
+      if(cutZ<HM.data[iy*nx+ix] && cutZ>=0 && cutZ<=MAT.z){
+        HM.data[iy*nx+ix]=Math.max(0,cutZ);
+        HM.dirty=true;
+      }
+    }
+  }
+}
+
+// Flush dirty HM to GPU mesh (only when dirty)
+function hmFlush(){
+  if(HM.dirty) hmBuildMesh();
+}
+
+// Reset heightmap on sim reset
+function hmReset(){
+  hmInit();
+}
+
+var gGrid=null,gBase=null,gWork=null,gMill=null,stlBuf=null;
+function initGeo(){
+  gGrid=bGrid();
+  gBase=bBox(0,0,-BASE_T,MX,MY,0);          // machine table surface
+  rebuildWork(); // workpiece outer box (sides/bottom only; top = HM mesh)
+  gMill=buildToolGeo();
+  hmInit();      // heightmap initialised after MAT/WO are set
+}
+
+// ================================================================
+// Toolpath — stored in MACHINE coords
+// ================================================================
+var rapidData=[],cutData=[],lbRapid=null,lbCut=null;
+
+function addSeg(mx0,my0,mz0,mx1,my1,mz1,isR){
+  if(isR){rapidData.push(mx0,my0,mz0,1.0,0.18,0.18,mx1,my1,mz1,1.0,0.18,0.18);}
+  else{cutData.push(mx0,my0,mz0,0.18,0.48,1.00,mx1,my1,mz1,0.18,0.48,1.00);}
+}
+function flushTP(){lbRapid=upLB(lbRapid,rapidData);lbCut=upLB(lbCut,cutData);}
+function clearTP(){rapidData=[];cutData=[];lbRapid=null;lbCut=null;}
+
+// ================================================================
+// Arc tessellation — operates in WORK coords, returns machine pts
+// I,J = incremental offset from start to centre (always)
+// ================================================================
+function arcPoints(wx0,wy0,wx1,wy1,I,J,cw){
+  var cx=wx0+I,cy=wy0+J;
+  var r=Math.sqrt(I*I+J*J);
+  var a0=Math.atan2(wy0-cy,wx0-cx);
+  var a1=Math.atan2(wy1-cy,wx1-cx);
+  var TWO_PI=Math.PI*2,sweep;
+  if(cw){sweep=a1-a0;if(sweep>0)sweep-=TWO_PI;if(sweep===0)sweep=-TWO_PI;}
+  else  {sweep=a1-a0;if(sweep<0)sweep+=TWO_PI;if(sweep===0)sweep=TWO_PI;}
+  var arcLen=Math.abs(sweep)*r;
+  var nSeg=Math.max(4,Math.min(ARC_SEG,Math.ceil(arcLen/3)));
+  var pts=[];
+  for(var i=0;i<=nSeg;i++){
+    var a=a0+sweep*(i/nSeg);
+    pts.push(cx+Math.cos(a)*r, cy+Math.sin(a)*r);
+  }
+  return pts;
+}
+
+// ================================================================
+// Visibility
+// ================================================================
+var showBase=true,showWork=true,showMill=true,showPath=true;
+window.toggleBase=function(){showBase=!showBase;var b=document.getElementById('btn-base');b.className='btn '+(showBase?'ton':'');b.textContent='BASE '+(showBase?'ON':'OFF');render();};
+window.toggleWork=function(){showWork=!showWork;var b=document.getElementById('btn-work');b.className='btn '+(showWork?'ton':'');b.textContent='WORK '+(showWork?'ON':'OFF');render();};
+window.clearHM=function(){hmReset();render();clog('info','ハイトマップリセット');};
+window.toggleMill=function(){showMill=!showMill;var b=document.getElementById('btn-mill');b.className='btn '+(showMill?'ton':'');b.textContent='MILL '+(showMill?'ON':'OFF');render();};
+window.togglePath=function(){showPath=!showPath;var b=document.getElementById('btn-path');b.className='btn '+(showPath?'ton':'');b.textContent='PATH '+(showPath?'ON':'OFF');render();};
+
+// ================================================================
+// Render
+// ================================================================
+function resize(){var w=vpEl.clientWidth,h=vpEl.clientHeight;if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h;gl.viewport(0,0,w,h);}}
+
+function render(){
+  resize();
+  updCamInfo();
+  // HM mesh rebuild deferred here for batching (called inside render block 3)
+  gl.clearColor(0.015,0.022,0.030,1.0);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.disable(gl.BLEND);
+  var mvp=getMVP();
+
+  // 1. Machine base table (dark grey, opaque)
+  if(showBase&&gBase) drawS(gBase,mvp,[0.28,0.30,0.32],1.0);
+
+  // 2. Grid + axes + WO marker (rebuilt each frame for WO marker)
+  gGrid=bGrid();
+  drawL(gGrid,mvp);
+
+  // 3. Workpiece: heightmap top face + solid side walls
+  if(showWork){
+    hmFlush(); // rebuild mesh if HM was updated
+    // Side walls + bottom: opaque tan/wood color
+    if(HM.sideBuf) drawS(HM.sideBuf,mvp,[0.72,0.60,0.42],1.0);
+    // Top face (cut surface): aluminum-ish color, opaque
+    if(HM.meshBuf) drawS(HM.meshBuf,mvp,[0.75,0.78,0.82],1.0);
+  }
+
+  // 4. Gantry wireframe (uses MACHINE coords)
+  var mPos=w2m(sim.wx,sim.wy,sim.wz);
+  var gw=bGantry(mPos.x,mPos.y,mPos.z);
+  drawL(gw,mvp);
+
+  // 5. Toolpaths (in MACHINE coords)
+  if(showPath){drawL(lbRapid,mvp);drawL(lbCut,mvp);}
+
+  // 6. STL (if loaded)
+  if(stlBuf&&showWork){
+    gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);
+    drawS(stlBuf,mvp,[0.30,0.45,0.62],0.70);
+    gl.depthMask(true);gl.disable(gl.BLEND);
+  }
+
+  // 7. Endmill (transparent cylinder, at MACHINE position)
+  if(showMill&&gMill){
+    gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);
+    drawS(gMill,getMillMVP(mPos.x,mPos.y,mPos.z),[0.25,0.72,1.0],0.42);
+    gl.depthMask(true);gl.disable(gl.BLEND);
+  }
+}
+
+// ================================================================
+// G-code simulator
+// sim stores WORK coords (wx, wy, wz)
+// All display / toolpath uses w2m() → machine coords
+// ================================================================
+var sim={wx:0,wy:0,wz:0,feed:1000,abs:true,cmds:[],idx:0,running:false,timer:null};
+
+function parseGC(txt){
+  return txt.split('\n').map(function(raw,i){
+    var line=raw.replace(/;.*/,'').replace(/\(.*?\)/g,'').trim().toUpperCase();
+    if(!line)return{blank:true,raw:raw,ln:i+1};
+    var words={},re=/([A-Z])([-+]?\d*\.?\d+)/g,m;
+    while((m=re.exec(line))!==null)words[m[1]]=parseFloat(m[2]);
+    return{words:words,raw:raw,ln:i+1};
+  });
+}
+
+function execOne(cmd){
+  if(cmd.blank)return true;
+  var w=cmd.words,G=w['G'];
+
+  if(G!==undefined){
+    // Linear
+    if(G===0||G===1){
+      var isR=(G===0);
+      var nwx=sim.wx,nwy=sim.wy,nwz=sim.wz;
+      if(sim.abs){
+        if(w.X!==undefined)nwx=w.X; if(w.Y!==undefined)nwy=w.Y; if(w.Z!==undefined)nwz=w.Z;
+      } else {
+        if(w.X!==undefined)nwx+=w.X; if(w.Y!==undefined)nwy+=w.Y; if(w.Z!==undefined)nwz+=w.Z;
+      }
+      if(w.F!==undefined)sim.feed=w.F;
+      var m0=w2m(sim.wx,sim.wy,sim.wz);
+      var m1=w2m(nwx,nwy,nwz);
+      addSeg(m0.x,m0.y,m0.z,m1.x,m1.y,m1.z,isR);
+      flushTP();
+      // Heightmap: update only for cutting moves that enter material
+      if(!isR && (nwz<=0 || sim.wz<=0)){
+        hmUpdateSeg(m0.x,m0.y,m0.z,m1.x,m1.y,m1.z);
+      }
+      sim.wx=nwx;sim.wy=nwy;sim.wz=nwz;
+      setMode(isR?'RAPID':'CUT');
+    }
+    // Arc G2/G3 — XY plane, I,J in work coords (incremental from start)
+    else if(G===2||G===3){
+      var cw=(G===2);
+      var nwx=sim.wx,nwy=sim.wy,nwz=sim.wz;
+      if(sim.abs){
+        if(w.X!==undefined)nwx=w.X; if(w.Y!==undefined)nwy=w.Y; if(w.Z!==undefined)nwz=w.Z;
+      } else {
+        if(w.X!==undefined)nwx+=w.X; if(w.Y!==undefined)nwy+=w.Y; if(w.Z!==undefined)nwz+=w.Z;
+      }
+      if(w.F!==undefined)sim.feed=w.F;
+      var I=w.I||0,J=w.J||0;
+      var r0=Math.sqrt(I*I+J*J);
+      if(r0<0.0001){
+        clog('warn','G'+G+' I=J=0 skip');
+        sim.wx=nwx;sim.wy=nwy;sim.wz=nwz;return true;
+      }
+      var cx=sim.wx+I,cy=sim.wy+J;
+      var r1=Math.sqrt((nwx-cx)*(nwx-cx)+(nwy-cy)*(nwy-cy));
+      if(Math.abs(r0-r1)>r0*0.05+1.0){
+        clog('warn','G'+G+' R不一致('+r0.toFixed(2)+'/'+r1.toFixed(2)+') -> 直線');
+        var m0=w2m(sim.wx,sim.wy,sim.wz),m1=w2m(nwx,nwy,nwz);
+        addSeg(m0.x,m0.y,m0.z,m1.x,m1.y,m1.z,false);flushTP();
+        sim.wx=nwx;sim.wy=nwy;sim.wz=nwz;setMode('CUT');return true;
+      }
+      // Tessellate arc in WORK XY coords, then convert to machine
+      var pts=arcPoints(sim.wx,sim.wy,nwx,nwy,I,J,cw);
+      var nPts=pts.length/2;
+      var wz0=sim.wz,dwz=nwz-wz0;
+      for(var i=1;i<nPts;i++){
+        var pwx0=pts[(i-1)*2],pwy0=pts[(i-1)*2+1],pwz0=wz0+dwz*(i-1)/(nPts-1);
+        var pwx1=pts[i*2],    pwy1=pts[i*2+1],    pwz1=wz0+dwz*i/(nPts-1);
+        var pm0=w2m(pwx0,pwy0,pwz0),pm1=w2m(pwx1,pwy1,pwz1);
+        addSeg(pm0.x,pm0.y,pm0.z,pm1.x,pm1.y,pm1.z,false);
+        if(pwz1<=0||pwz0<=0){
+          hmUpdateSeg(pm0.x,pm0.y,pm0.z,pm1.x,pm1.y,pm1.z);
+        }
+      }
+      flushTP();
+      sim.wx=nwx;sim.wy=nwy;sim.wz=nwz;
+      setMode('CUT');
+      clog('info','G'+G+' R='+r0.toFixed(3)+'mm '+(cw?'CW':'CCW')+' I='+I+' J='+J);
+    }
+    else if(G===28){
+      var m0=w2m(sim.wx,sim.wy,sim.wz);
+      addSeg(m0.x,m0.y,m0.z,0,0,0,true);flushTP();
+      sim.wx=0;sim.wy=0;sim.wz=0;setMode('HOME');clog('ok','G28: HOME (機械原点)');
+    }
+    else if(G===54){clog('info','G54: ワーク座標系 (設定済み)');}
+    else if(G===90){sim.abs=true; clog('info','G90: Absolute');}
+    else if(G===91){sim.abs=false;clog('info','G91: Incremental');}
+    else if(G===21)clog('info','G21: mm');
+    else if(G===20)clog('info','G20: inch');
+    else if(G===4) clog('info','G4 Dwell P'+(w.P||0)+'ms');
+    else clog('dim','G'+G+' skip');
+  }
+
+  var M=w['M'];
+  if(M!==undefined){
+    if(M===0||M===1){clog('info','M'+M+': Stop');stopSim();return false;}
+    if(M===2||M===30){clog('ok','M'+M+': END');stopSim();setMode('DONE');return false;}
+    if(M===3)clog('ok','M3 S'+(w.S||'--'));
+    else if(M===4)clog('ok','M4 S'+(w.S||'--'));
+    else if(M===5)clog('info','M5 Spindle OFF');
+    else if(M===6)clog('info','M6 T'+(w.T||'--'));
+    else clog('dim','M'+M+' skip');
+  }
+  return true;
+}
+
+window.resetSim=function(){
+  clearTimeout(sim.timer);
+  sim.wx=0;sim.wy=0;sim.wz=0;sim.feed=1000;sim.abs=true;
+  sim.cmds=[];sim.idx=0;sim.running=false;sim.timer=null;
+  clearTP();hmReset();updDRO(0,0,0,'--');setMode('IDLE');
+  document.getElementById('pbar').style.width='0%';hlLine(-1);render();
+  clog('info','リセット完了');
+};
+function loadSim(){
+  var txt=document.getElementById('gc').value;
+  if(!txt.trim()){clog('err','G-codeを入力してください');return false;}
+  sim.cmds=parseGC(txt);sim.idx=0;
+  clog('info',sim.cmds.length+'行 ロード完了');return true;
+}
+window.stepSim=function(){
+  if(!sim.cmds.length){if(!loadSim())return;}
+  if(sim.idx>=sim.cmds.length){clog('info','END');setMode('DONE');return;}
+  var cmd=sim.cmds[sim.idx];hlLine(cmd.ln-1);
+  var cont=execOne(cmd);sim.idx++;
+  document.getElementById('pbar').style.width=(sim.idx/sim.cmds.length*100).toFixed(1)+'%';
+  updDRO(sim.wx,sim.wy,sim.wz,sim.feed+'mm/m');render();
+  return cont;
+};
+window.toggleRun=function(){
+  if(sim.running){stopSim();return;}
+  if(!sim.cmds.length||sim.idx>=sim.cmds.length){window.resetSim();if(!loadSim())return;}
+  sim.running=true;document.getElementById('btnrun').textContent='PAUSE';setMode('RUNNING');
+
+  // Speed map: slider 1-100 → multiplier 1x-100x
+  // multiplier = round(10^(v/43.4)) gives ~1x at v=1, ~100x at v=100
+  // At low speed: delay = base_ms / mult  (setTimeout)
+  // At high speed (mult>=10): process mult steps per RAF frame, delay=0
+  var BASE_MS = 80; // ms per step at 1x
+
+  function getSpeedMult(){
+    var v=parseInt(document.getElementById('spd').value);
+    // exponential: 1x..100x
+    var mult=Math.round(Math.pow(100,(v-1)/99));
+    return Math.max(1,Math.min(100,mult));
+  }
+
+  function tick(){
+    if(!sim.running)return;
+    var mult=getSpeedMult();
+    var stepsPerTick=mult>=10 ? mult : 1;
+    var cont=true;
+    for(var i=0;i<stepsPerTick;i++){
+      if(sim.idx>=sim.cmds.length){cont=false;break;}
+      cont=window.stepSim();
+      if(!cont)break;
+    }
+    // Flush HM after each tick batch so display stays reasonably current
+    if(HM.dirty) hmBuildMesh();
+    if(sim.idx>=sim.cmds.length||!cont){
+      sim.running=false;document.getElementById('btnrun').textContent='&#9654; RUN';
+      hmBuildMesh(); // final flush
+      return;
+    }
+    var delay=mult>=10 ? 0 : Math.round(BASE_MS/mult);
+    sim.timer=setTimeout(tick,delay);
+  }
+  tick();
+};
+window.stopSim=function(){
+  clearTimeout(sim.timer);sim.running=false;document.getElementById('btnrun').textContent='&#9654; RUN';
+  if(document.getElementById('mbadge').textContent==='RUNNING')setMode('IDLE');render();
+};
+
+// ================================================================
+// UI helpers
+// ================================================================
+function updDRO(wx,wy,wz,f){
+  var m=w2m(wx,wy,wz);
+  document.getElementById('hx').textContent=(+wx).toFixed(3);
+  document.getElementById('hy').textContent=(+wy).toFixed(3);
+  document.getElementById('hz').textContent=(+wz).toFixed(3);
+  document.getElementById('hf').textContent=f;
+  document.getElementById('hmx').textContent='MCH:'+m.x.toFixed(2);
+  document.getElementById('hmy').textContent='MCH:'+m.y.toFixed(2);
+  document.getElementById('hmz').textContent='MCH:'+m.z.toFixed(2);
+}
+function setMode(m){
+  var el=document.getElementById('mbadge');el.textContent=m;
+  var cls={RUNNING:'brun',RAPID:'brapid',CUT:'bcut',HOME:'brun',DONE:'brun'};
+  el.className='badge'+(cls[m]?' '+cls[m]:'');
+}
+function hlLine(li){
+  var ta=document.getElementById('gc');
+  if(li>=0)ta.scrollTop=Math.max(0,li*24.32-60);
+  var lines=ta.value.split('\n'),h='';
+  for(var i=0;i<lines.length;i++)
+    h+=(i===li)?'<span style="color:var(--accent)">'+(i+1)+'</span>\n':(i+1)+'\n';
+  document.getElementById('ln').innerHTML=h;
+}
+var logN=0;
+function clog(type,msg){
+  var con=document.getElementById('con'),t=new Date();
+  var ts=String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0')+':'+String(t.getSeconds()).padStart(2,'0');
+  var d=document.createElement('div');d.className='cl '+type;
+  d.innerHTML='<span class="ts">['+ts+']</span><span class="msg"> '+msg+'</span>';
+  con.appendChild(d);con.scrollTop=con.scrollHeight;
+  if(++logN>300)con.removeChild(con.firstChild);
+}
+window.updLN=function(){
+  var v=document.getElementById('gc').value.split('\n');
+  document.getElementById('ln').textContent=v.map(function(_,i){return i+1;}).join('\n');
+};
+window.syncScroll=function(){document.getElementById('ln').scrollTop=document.getElementById('gc').scrollTop;};
+window.clearCode=function(){document.getElementById('gc').value='';window.updLN();clog('info','クリア');};
+window.loadFile=function(e){
+  var f=e.target.files[0];if(!f)return;
+  var r=new FileReader();
+  r.onload=function(ev){document.getElementById('gc').value=ev.target.result;window.updLN();clog('ok','読込: '+f.name);};
+  r.readAsText(f);e.target.value='';
+};
+window.loadExample=function(){
+  document.getElementById('gc').value=[
+    '; === G2/G3 Arc + Work Offset Test ===',
+    '; ワーク座標で記述 (WO: X200 Y100 Z12)',
+    'G21',
+    'G90',
+    'G28',
+    'M3 S18000',
+    'G0 Z5',
+    '; 矩形 (ワーク座標)',
+    'G0 X50 Y50',
+    'G1 Z-2 F500',
+    'G1 X400 Y50 F3000',
+    'G1 X400 Y300',
+    'G1 X50 Y300',
+    'G1 X50 Y50',
+    'G0 Z5',
+    '; 角丸矩形 R30',
+    'G0 X100 Y400',
+    'G1 Z-1.5 F600',
+    'G1 X500 Y400 F2500',
+    'G2 X530 Y430 I0 J30',
+    'G1 X530 Y580',
+    'G2 X500 Y610 I-30 J0',
+    'G1 X100 Y610',
+    'G2 X70 Y580 I0 J-30',
+    'G1 X70 Y430',
+    'G2 X100 Y400 I30 J0',
+    'G0 Z5',
+    '; フルサークル R80',
+    'G0 X300 Y750',
+    'G1 Z-1 F400',
+    'G2 X300 Y750 I80 J0 F2000',
+    'G0 Z10',
+    'G0 X0 Y0',
+    'M5',
+    'M30'
+  ].join('\n');
+  window.updLN();clog('info','サンプル読込完了 (ワーク座標系)');
+};
+
+// STL drop
+vpEl.addEventListener('dragover',function(e){e.preventDefault();});
+vpEl.addEventListener('drop',function(e){
+  e.preventDefault();
+  var f=e.dataTransfer.files[0];
+  if(!f||!f.name.match(/\.stl$/i)){clog('err','STLファイルをドロップ');return;}
+  f.arrayBuffer().then(function(buf){
+    try{
+      var dv=new DataView(buf),nTri=dv.getUint32(80,true),verts=[],idxs=[],vi=0;
+      for(var i=0;i<nTri;i++){
+        var o=84+i*50,nx=dv.getFloat32(o,true),ny=dv.getFloat32(o+4,true),nz=dv.getFloat32(o+8,true);
+        for(var j=0;j<3;j++){var vo=o+12+j*12;verts.push(dv.getFloat32(vo,true),dv.getFloat32(vo+4,true),dv.getFloat32(vo+8,true),nx,ny,nz);idxs.push(vi++);}
+      }
+      if(vi>65535){clog('warn','頂点65535超 -> 切り捨て');idxs=idxs.slice(0,65535);verts=verts.slice(0,65535*6);}
+      stlBuf=mkSB(verts,idxs);
+      clog('ok','STL: '+nTri+' tri loaded');render();
+    }catch(err){clog('err','STL error: '+err.message);}
+  });
+});
+
+// Idle animation
+var idleT=0;
+(function loop(){
+  if(!sim.running&&!sim.cmds.length){
+    idleT+=0.003;
+    sim.wx=MAT.x*0.25+Math.sin(idleT)*20;
+    sim.wy=MAT.y*0.25+Math.cos(idleT*0.7)*15;
+    sim.wz=8+Math.sin(idleT*1.2)*4;
+    updDRO(sim.wx,sim.wy,sim.wz,'--');
+    render();
+  }
+  requestAnimationFrame(loop);
+})();
+
+window.addEventListener('resize',function(){resize();render();});
+// Speed label live update
+(function(){
+  var sl=document.getElementById('spd');
+  var lb=document.getElementById('spd-lbl');
+  function updSpd(){
+    var v=parseInt(sl.value);
+    var mult=Math.round(Math.pow(100,(v-1)/99));
+    lb.textContent='x'+Math.max(1,Math.min(100,mult));
+    lb.style.color=mult>=50?'#ff9a40':mult>=10?'#ffd040':'var(--dim)';
+  }
+  sl.addEventListener('input',updSpd);
+  updSpd();
+})();
+initGeo();
+window.updLN();
+updWODisp();
+resize();render();
+clog('info','CNC Simulator 起動 -- 機械:X2350 Y1200 Z150mm');
+clog('info','ハイトマップ切削シミュ有効 / 材料 300x300x12mm (変更可)');
+clog('dim','中ボタンドラッグ:平行移動 / EXAMPLEでサンプル -> RUN');
+})();
+</script>
+</body>
+</html>
