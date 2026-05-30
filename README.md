@@ -21,7 +21,7 @@ WebGL製のブラウザで動くCNC Gコードシミュレーター。
 
 ### 基本操作
 
-1. `MakerMachineSim.html` をブラウザで開く（Chrome / Edge 推奨）
+1. `index.html` をブラウザで開く（Chrome / Edge 推奨）
 2. 右パネル **GCODE タブ** にGコードを貼り付け、またはファイルを読み込む
 3. ヘッダーの **▶ RUN** ボタンで実行
 
@@ -190,7 +190,7 @@ X300 I10 J-5              ; 直前のG2 として実行
 
 ```
 CNCSIM/
-└── MakerMachineSim.html    # シミュレーター本体（全機能が1ファイルに集約）
+└── index.html    # シミュレーター本体（全機能が1ファイルに集約）
 ```
 
 ---
