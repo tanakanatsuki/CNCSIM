@@ -1007,7 +1007,8 @@
                 rebuildWork();
                 hmInit();
                 updHMInfo();
-                var hmMB = (HM.nx * HM.ny * 6 * 4 / 1024 / 1024).toFixed(0);
+                var hmCells2 = HM.nx * HM.ny;
+                var hmMB = (hmCells2 * 6 * 4 / 1024 / 1024).toFixed(0);
                 clog('info', 'HM初期化: ' + MAT.x + '×' + MAT.y + '×' + MAT.z + 'mm (' + HM.nx + '×' + HM.ny + ' ' + HM_RES + 'mm ' + hmMB + 'MB)');
                 render();
             };
@@ -2041,9 +2042,10 @@
                 HM_RES = v;
                 hmInit();
                 updHMInfo();
-                var cellMB = (HM.nx * HM.ny * 6 * 4 / 1024 / 1024).toFixed(0);
-                var warn = HM.nx * HM.ny > 3000000 ? '⚠ 重い' : 'OK';
-                clog('info', 'HM初期化: 精度' + v + 'mm (' + HM.nx + '×' + HM.ny + '=' + HM.nx * HM.ny.toLocaleString() + 'セル, ' + cellMB + 'MB) ' + warn);
+                var hmCells = HM.nx * HM.ny;
+                var cellMB = (hmCells * 6 * 4 / 1024 / 1024).toFixed(0);
+                var warn = hmCells > 3000000 ? '⚠ 重い' : 'OK';
+                clog('info', 'HM初期化: 精度' + v + 'mm (' + HM.nx + '×' + HM.ny + '=' + hmCells.toLocaleString() + 'セル, ' + cellMB + 'MB) ' + warn);
                 render();
             };
             function updHMInfo() {
