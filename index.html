@@ -923,6 +923,10 @@
                         <div class="row">
                             <span class="flabel">ZOOM</span><span class="cam-val" id="cam-zm">1.00x</span>
                         </div>
+                        <div class="row">
+                            <span class="flabel">PAN X</span><span class="cam-val" id="cam-px">0.000</span>
+                            <span class="flabel">PAN Y</span><span class="cam-val" id="cam-py">0.000</span>
+                        </div>
                     </div>
                     <div class="sec">
                         <div class="sec-title">PROJECTION</div>
@@ -934,6 +938,7 @@
                     <div class="sec">
                         <div class="sec-title">PRESET VIEWS</div>
                         <div class="row" style="flex-wrap:wrap;gap:5px;">
+                            <button class="cbtn ton2" onclick="setView('home')" title="起動時の視点に戻す">HOME</button>
                             <button class="cbtn" onclick="setView('top')">TOP</button>
                             <button class="cbtn" onclick="setView('front')">FRONT</button>
                             <button class="cbtn" onclick="setView('right')">RIGHT</button>
@@ -946,6 +951,40 @@
                             左ドラッグ: パン<br>
                             中ボタンドラッグ: 回転<br>
                             スクロール: ズーム (カーソル中心)
+                        </div>
+                    </div>
+                    <div class="sec">
+                        <div class="sec-title">3D MOUSE (DEBUG)</div>
+                        <div class="row" style="flex-wrap:wrap;gap:5px;">
+                            <button class="cbtn" id="btn-sm-connect" onclick="smConnect()">CONNECT</button>
+                            <button class="cbtn" id="btn-sm-cam" onclick="smToggleCam()" title="6軸でカメラを操作">CAM CTRL OFF</button>
+                            <button class="cbtn ton2" id="btn-sm-rot" onclick="smToggleRot()" title="回転(ROT)操作の有効/無効">ROT ON</button>
+                        </div>
+                        <div class="row" style="margin-top:6px;">
+                            <span class="flabel">DEVICE</span><span class="cam-val" id="sm-dev" style="min-width:120px;font-size:.6rem;">--</span>
+                        </div>
+                        <div class="row">
+                            <span class="flabel">RID</span><span class="cam-val" id="sm-rid">--</span>
+                            <span class="flabel">RATE</span><span class="cam-val" id="sm-rate">0/s</span>
+                        </div>
+                        <div class="row" style="margin-top:4px;"><span class="flabel" style="color:var(--accent)">TRANS</span></div>
+                        <div class="row">
+                            <span class="flabel">TX</span><span class="cam-val" id="sm-tx">0</span>
+                            <span class="flabel">TY</span><span class="cam-val" id="sm-ty">0</span>
+                            <span class="flabel">TZ</span><span class="cam-val" id="sm-tz">0</span>
+                        </div>
+                        <div class="row" style="margin-top:4px;"><span class="flabel" style="color:var(--accent)">ROT</span></div>
+                        <div class="row">
+                            <span class="flabel">RX</span><span class="cam-val" id="sm-rx">0</span>
+                            <span class="flabel">RY</span><span class="cam-val" id="sm-ry">0</span>
+                            <span class="flabel">RZ</span><span class="cam-val" id="sm-rz">0</span>
+                        </div>
+                        <div class="row" style="margin-top:4px;"><span class="flabel">BTN</span><span class="cam-val" id="sm-btn" style="min-width:120px;font-size:.6rem;">--</span></div>
+                        <div class="row" style="margin-top:4px;"><span class="flabel">RAW</span></div>
+                        <div class="info-text" id="sm-raw" style="font-family:'Share Tech Mono',monospace;color:var(--text);word-break:break-all;min-height:1.4em;">--</div>
+                        <div class="info-text">
+                            Chrome/Edge専用 (WebHID)。CONNECTはボタン押下で実行。<br>
+                            軸を動かしてTX..RZの符号/桁を確認 → マッピング確定に使用。
                         </div>
                     </div>
                 </div>
@@ -1181,8 +1220,12 @@
 
             // Preset views
             window.setView = function (v) {
-                // dist は変更しない（ズーム倍率を保持）
-                if (v === 'top') { cam.rx = -Math.PI / 2 + 0.01; cam.ry = 0; }
+                // dist は変更しない（ズーム倍率を保持）。ただし HOME は全パラメータを起動時に戻す。
+                if (v === 'home') {
+                    cam.rx = CAM_HOME.rx; cam.ry = CAM_HOME.ry; cam.dist = CAM_HOME.dist;
+                    cam.panX = CAM_HOME.panX; cam.panY = CAM_HOME.panY;
+                }
+                else if (v === 'top') { cam.rx = -Math.PI / 2 + 0.01; cam.ry = 0; }
                 else if (v === 'front') { cam.rx = -0.01; cam.ry = 0; }
                 else if (v === 'right') { cam.rx = -0.01; cam.ry = Math.PI / 2; }
                 else if (v === 'left') { cam.rx = -0.01; cam.ry = -Math.PI / 2; }
@@ -1200,6 +1243,9 @@
                 document.getElementById('cam-az').textContent = az.toFixed(1) + '°';
                 document.getElementById('cam-el').textContent = el.toFixed(1) + '°';
                 document.getElementById('cam-zm').textContent = zm.toFixed(2) + 'x';
+                var px = document.getElementById('cam-px'), py = document.getElementById('cam-py');
+                if (px) px.textContent = cam.panX.toFixed(3);
+                if (py) py.textContent = cam.panY.toFixed(3);
             }
 
             // ================================================================
@@ -1209,6 +1255,9 @@
             //   スクロール       : ズーム（カーソル中心）
             // ================================================================
             var cam = { rx: -0.01, ry: 0, dist: 0.7568, panX: 0, panY: 0 };  // FRONT view default
+            // HOME = exact startup camera parameters (single source of truth for the
+            // HOME preset and the 3D-mouse "lost" recovery).
+            var CAM_HOME = { rx: -0.01, ry: 0, dist: 0.7568, panX: 0, panY: 0 };
             var camDrag = null;
 
             vpEl.addEventListener('contextmenu', function (e) { e.preventDefault(); });
@@ -2725,6 +2774,150 @@
             window.updLN();
             updWODisp();
             resize(); render();
+            // ================================================================
+            // 3D MOUSE (3Dconnexion SpaceMouse) — WebHID debug driver
+            // Chrome/Edge only. Reads raw HID input reports so the user can confirm
+            // their device's axis order / sign before wiring it to the camera.
+            // VendorIds: 0x046d (Logitech-era), 0x256f (current 3Dconnexion).
+            // Report layout (typical): RID1=translation, RID2=rotation, RID3=buttons.
+            //   Each axis = little-endian Int16 at byte offsets 0,2,4 of e.data (DataView).
+            // ================================================================
+            var SM = {
+                dev: null, camCtrl: false, rotEnable: true, raf: null,
+                t: { x: 0, y: 0, z: 0 }, r: { x: 0, y: 0, z: 0 }, btn: 0,
+                rateCnt: 0, rateT: performance.now(), lastReport: 0
+            };
+
+            function smSetText(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
+
+            window.smConnect = async function () {
+                if (!('hid' in navigator)) {
+                    clog('err', 'WebHID非対応ブラウザです (Chrome/Edge を使用)');
+                    return;
+                }
+                try {
+                    var devs = await navigator.hid.requestDevice({
+                        filters: [
+                            { vendorId: 0x046d }, { vendorId: 0x256f }
+                        ]
+                    });
+                    if (!devs.length) { clog('info', '3Dマウス未選択'); return; }
+                    var dev = devs[0];
+                    if (!dev.opened) await dev.open();
+                    SM.dev = dev;
+                    smSetText('sm-dev', dev.productName || '(no name)');
+                    document.getElementById('btn-sm-connect').textContent = 'CONNECTED';
+                    document.getElementById('btn-sm-connect').classList.add('ton2');
+                    clog('ok', '3D Mouse: ' + (dev.productName || 'device') + ' 接続 (VID 0x' + dev.vendorId.toString(16) + ')');
+                    dev.addEventListener('inputreport', smOnReport);
+                    smStartRAF();
+                } catch (err) {
+                    clog('err', '3D Mouse 接続失敗: ' + err.message);
+                }
+            };
+
+            function smOnReport(e) {
+                SM.rateCnt++; SM.lastReport = performance.now();
+                var dv = e.data, rid = e.reportId, n = dv.byteLength;
+                // Raw byte dump (hex) for debugging unknown layouts
+                var bytes = []; for (var i = 0; i < n; i++)bytes.push(('0' + dv.getUint8(i).toString(16)).slice(-2));
+                smSetText('sm-raw', 'RID' + rid + ' [' + bytes.join(' ') + ']');
+                smSetText('sm-rid', String(rid) + ' (' + n + 'B)');
+
+                function ax(o) { return (o + 2 <= n) ? dv.getInt16(o, true) : 0; }
+                if (rid === 1) {
+                    // Translation always lives at bytes 0..5.
+                    SM.t.x = ax(0); SM.t.y = ax(2); SM.t.z = ax(4);
+                    // SpaceMouse Wireless packs all 6 axes into RID1 (>=12 data bytes):
+                    // bytes 6..11 = rotation. Read it here so RX/RY/RZ are populated even
+                    // when no separate RID2 is sent.
+                    if (n >= 12) { SM.r.x = ax(6); SM.r.y = ax(8); SM.r.z = ax(10); }
+                } else if (rid === 2) {      // rotation (split-report devices)
+                    SM.r.x = ax(0); SM.r.y = ax(2); SM.r.z = ax(4);
+                } else if (rid === 3) {      // buttons (bitfield, little-endian)
+                    var b = 0; for (var k = 0; k < n && k < 4; k++)b |= dv.getUint8(k) << (8 * k);
+                    SM.btn = b;
+                }
+            }
+
+            // Periodic UI refresh + optional camera control. Runs only while connected.
+            function smStartRAF() {
+                if (SM.raf) return;
+                function loop() {
+                    // rate (reports/sec)
+                    var now = performance.now();
+                    if (now - SM.rateT >= 500) {
+                        smSetText('sm-rate', Math.round(SM.rateCnt / ((now - SM.rateT) / 1000)) + '/s');
+                        SM.rateCnt = 0; SM.rateT = now;
+                    }
+                    // Auto-zero when device stops emitting (>120ms since last report)
+                    if (now - SM.lastReport > 120) { SM.t.x = SM.t.y = SM.t.z = 0; SM.r.x = SM.r.y = SM.r.z = 0; }
+                    smSetText('sm-tx', SM.t.x); smSetText('sm-ty', SM.t.y); smSetText('sm-tz', SM.t.z);
+                    smSetText('sm-rx', SM.r.x); smSetText('sm-ry', SM.r.y); smSetText('sm-rz', SM.r.z);
+                    smSetText('sm-btn', SM.btn ? ('0x' + SM.btn.toString(16)) : '--');
+
+                    if (SM.camCtrl) smApplyToCam();
+                    SM.raf = requestAnimationFrame(loop);
+                }
+                SM.raf = requestAnimationFrame(loop);
+            }
+
+            // Axis → camera mapping (SpaceMouse Wireless):
+            //   TX        → horizontal pan (panX)
+            //   TY  -→ up / +→ down pan (panY); screen-up should map to TY negative
+            //   TZ  -→ zoom in / +→ zoom out
+            //   ROT.x → elevation(rx),  ROT.y → azimuth(ry)
+            function smApplyToCam() {
+                var DEAD = 30, RS = 0.00006, PS = 0.000018, ZS = 0.00012;
+                function dz(v) { return Math.abs(v) < DEAD ? 0 : v; }
+                var tx = dz(SM.t.x), ty = dz(SM.t.y), tz = dz(SM.t.z);
+                var rx = dz(SM.r.x), ry = dz(SM.r.y);
+                var changed = false;
+                // Pan X (unchanged)
+                if (tx) { cam.panX += tx * PS * cam.dist; changed = true; }
+                // Pan Y: TY negative → pan up, TY positive → pan down.
+                // panY increases moves view content up, so add (-ty): ty<0 → +panY (up).
+                if (ty) { cam.panY += (-ty) * PS * cam.dist; changed = true; }
+                // Zoom: TZ negative → zoom in (smaller dist), TZ positive → zoom out.
+                // factor = 1 + tz*ZS  → tz<0 shrinks dist (zoom in), tz>0 grows (zoom out).
+                if (tz) { cam.dist = Math.max(0.0005, Math.min(50, cam.dist * (1 + tz * ZS))); changed = true; }
+                // Orbit (only when rotation is enabled)
+                if (SM.rotEnable) {
+                    if (rx) { cam.rx = Math.max(-1.55, Math.min(-0.02, cam.rx + rx * RS)); changed = true; }
+                    if (ry) { cam.ry += (-ry) * RS; changed = true; } // RY inverted
+                }
+                if (changed) { render(); updCamInfo(); }
+            }
+
+            window.smToggleCam = function () {
+                if (!SM.dev) { clog('info', '先に CONNECT してください'); return; }
+                SM.camCtrl = !SM.camCtrl;
+                var b = document.getElementById('btn-sm-cam');
+                b.textContent = 'CAM CTRL ' + (SM.camCtrl ? 'ON' : 'OFF');
+                b.classList.toggle('ton2', SM.camCtrl);
+                clog('info', '3D Mouse カメラ操作: ' + (SM.camCtrl ? 'ON' : 'OFF'));
+            };
+
+            window.smToggleRot = function () {
+                SM.rotEnable = !SM.rotEnable;
+                var b = document.getElementById('btn-sm-rot');
+                b.textContent = 'ROT ' + (SM.rotEnable ? 'ON' : 'OFF');
+                b.classList.toggle('ton2', SM.rotEnable);
+                clog('info', '3D Mouse 回転操作: ' + (SM.rotEnable ? 'ON' : 'OFF'));
+            };
+
+            // Re-attach to a previously-granted device on reload (no dialog needed)
+            if ('hid' in navigator) {
+                navigator.hid.getDevices().then(function (ds) {
+                    for (var i = 0; i < ds.length; i++) {
+                        if (ds[i].vendorId === 0x046d || ds[i].vendorId === 0x256f) {
+                            clog('dim', '3D Mouse 既知デバイス検出: ' + (ds[i].productName || '') + ' (CONNECTで接続)');
+                            break;
+                        }
+                    }
+                }).catch(function () { });
+            }
+
             clog('info', 'CNC Simulator v2.37 起動 -- 機械:X2350 Y1200 Z150mm');
             renderToolTable();
             updHMInfo();
