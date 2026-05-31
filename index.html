@@ -1762,7 +1762,7 @@
             //     Top face uses displaced vertices; sides/bottom are static walls.
             // ================================================================
             var HM_RES = 1.0;       // mm per cell — changeable via UI
-            var HM = { nx: 0, ny: 0, data: null, tex: null, dirty: false, meshBufs: [], sideBuf: null, btBuf: null, dirtyY0: 0, dirtyY1: 0 };
+            var HM = { nx: 0, ny: 0, data: null, tex: null, dirty: false, meshBufs: [], sideBuf: null, btBuf: null, dirtyY0: 0, dirtyY1: 0, btDirty: false };
 
             // Initialise / reset heightmap to flat (= MAT.z in machine Z)
             function hmInit() {
@@ -1805,23 +1805,14 @@
                     freeSB(HM.btBuf); HM.btBuf = null;
                 }
 
-                // buildBand: iyBand〜iyEnd の頂点 + iyBand〜iyEnd-1 のクワッド
-                // 次バンドは iyEnd から開始（iyEnd行は共有頂点として再計算されるが
-                // 同じデータなので値は同一 → オーバーラップなし）
-                // 境界Zファイティング防止: バンドを完全非オーバーラップにする
-                // iyBand=0→bandRows, 次=bandRows→bandRows*2, ...
-                // 各バンドのクワッドは iy=iyBand〜iyEnd-1 の行間のみ
-                // ただし頂点は iyBand〜iyEnd 必要 → iyEnd行の頂点は次バンドで再利用
-                function buildBand(iyBand, iyEnd) {
-                    // 頂点行: iyBand 〜 iyEnd  (= bandNY 行)
-                    // クワッド行: iyBand 〜 iyEnd-1 (= bandNY-1 行のクワッド)
-                    var bandNY = iyEnd - iyBand + 1;
-                    var nVerts = bandNY * nx;
-                    var nQuads = (bandNY - 1) * (nx - 1);
-                    var verts = new Float32Array(nVerts * 6);
-                    // Uint32 使えるなら使う、なければ Uint16
-                    var idxs = uint32ext ? new Uint32Array(nQuads * 6) : new Uint16Array(nQuads * 6);
-                    var vi = 0, ii = 0;
+                // Band strategy: grid split into horizontal bands of `bandRows` rows.
+                //   verts per band = (bandNY)×nx,  quads = (bandNY-1)×(nx-1)
+                // Bands are non-overlapping in quad rows (Z-fighting-safe). Per band we keep
+                // a persistent GPU vertex buffer + a static index buffer; incremental updates
+                // re-upload only the vertices of dirty bands (indices never change).
+                // Vertex generation for a band (writes into pre-sized Float32Array)
+                function bandVerts(iyBand, iyEnd, verts) {
+                    var vi = 0;
                     for (var iy = iyBand; iy <= iyEnd; iy++) {
                         for (var ix = 0; ix < nx; ix++) {
                             var cell = iy * nx + ix, mz = d[cell];
@@ -1834,6 +1825,13 @@
                             vi += 6;
                         }
                     }
+                }
+                // Index generation — topology only depends on band height & nx, so this is
+                // computed ONCE when a band buffer is (re)created, never on incremental update.
+                function bandIdxArr(bandNY) {
+                    var nQuads = (bandNY - 1) * (nx - 1);
+                    var idxs = uint32ext ? new Uint32Array(nQuads * 6) : new Uint16Array(nQuads * 6);
+                    var ii = 0;
                     for (var ly = 0; ly < bandNY - 1; ly++) {
                         for (var ix = 0; ix < nx - 1; ix++) {
                             var a = ly * nx + ix;
@@ -1842,26 +1840,16 @@
                             ii += 6;
                         }
                     }
-                    var idxType = uint32ext ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
-                    return { verts: verts, idxs: idxs, n: nQuads * 6, idxType: idxType };
+                    return idxs;
                 }
-                function uploadBand(bdata) {
-                    var vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb);
-                    gl.bufferData(gl.ARRAY_BUFFER, bdata.verts, gl.DYNAMIC_DRAW);
-                    var ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
-                    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, bdata.idxs, gl.DYNAMIC_DRAW);
-                    return { chunks: [{ vb: vb, ib: ib, n: bdata.n, idxType: bdata.idxType }] };
-                }
+                var idxType = uint32ext ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
 
                 // バンドサイズ: Float32で1バンド最大32MB = 32*1024*1024/24 = 1,398,101頂点
-                // これを行数に換算: floor(1_398_101 / nx)
                 var MAX_BAND_VERTS = 1398101; // ~32MB per band
                 var bandRows;
                 if (uint32ext) {
-                    // Uint32: 頂点数上限で分割（インデックス上限なし）
                     bandRows = Math.max(1, Math.floor(MAX_BAND_VERTS / nx) - 1);
                 } else {
-                    // Uint16: インデックス上限 65534 で分割
                     bandRows = Math.max(1, Math.floor(65534 / nx) - 1);
                 }
 
@@ -1870,88 +1858,90 @@
                     var iyEnd = Math.min(iyBand + bandRows, ny - 1);
                     var bandDirty = isFullRebuild || (iyBand <= dY1 && iyEnd >= dY0);
                     if (bandDirty) {
-                        var bdata = buildBand(iyBand, iyEnd);
-                        if (isFullRebuild) {
-                            HM.meshBufs.push(uploadBand(bdata));
+                        var bandNY = iyEnd - iyBand + 1;
+                        var nVerts = bandNY * nx;
+                        var nQuads = (bandNY - 1) * (nx - 1);
+                        var verts = new Float32Array(nVerts * 6);
+                        bandVerts(iyBand, iyEnd, verts);
+                        var prev = HM.meshBufs[bandIdx];
+                        var ch = prev && prev.chunks && prev.chunks[0];
+                        if (ch && ch.idxType === idxType && ch.n === nQuads * 6 && ch.vCap >= verts.byteLength) {
+                            // Reuse: same topology → upload vertices only (indices already on GPU)
+                            gl.bindBuffer(gl.ARRAY_BUFFER, ch.vb);
+                            gl.bufferSubData(gl.ARRAY_BUFFER, 0, verts);
                         } else {
-                            if (HM.meshBufs[bandIdx]) freeSB(HM.meshBufs[bandIdx]);
-                            HM.meshBufs[bandIdx] = uploadBand(bdata);
+                            if (prev) freeSB(prev);
+                            var idxs = bandIdxArr(bandNY);
+                            var vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+                            gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
+                            var ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+                            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idxs, gl.STATIC_DRAW);
+                            HM.meshBufs[bandIdx] = { chunks: [{ vb: vb, ib: ib, n: nQuads * 6, idxType: idxType, vCap: verts.byteLength }] };
                         }
                     }
                     bandIdx++; iyBand = iyEnd;
                 }
-
-                // Side walls + outline (24 vertices — always fits in Uint16)
-                var sx0 = WO.x, sy0 = WO.y, sx1 = WO.x + MAT.x, sy1 = WO.y + MAT.y, sz0 = 0, sz1 = MAT.z;
-                var sideV = [], sideI = [], sv = 0;
-                function addWall(x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3, nn) {
-                    sideV.push(x0, y0, z0, nn[0], nn[1], nn[2]);
-                    sideV.push(x1, y1, z1, nn[0], nn[1], nn[2]);
-                    sideV.push(x2, y2, z2, nn[0], nn[1], nn[2]);
-                    sideV.push(x3, y3, z3, nn[0], nn[1], nn[2]);
-                    sideI.push(sv, sv + 1, sv + 2, sv, sv + 2, sv + 3); sv += 4;
-                }
-                // 4 side walls
-                addWall(sx0, sy0, sz0, sx1, sy0, sz0, sx1, sy0, sz1, sx0, sy0, sz1, [0, -1, 0]);
-                addWall(sx0, sy1, sz0, sx1, sy1, sz0, sx1, sy1, sz1, sx0, sy1, sz1, [0, 1, 0]);
-                addWall(sx0, sy0, sz0, sx0, sy1, sz0, sx0, sy1, sz1, sx0, sy0, sz1, [-1, 0, 0]);
-                addWall(sx1, sy0, sz0, sx1, sy1, sz0, sx1, sy1, sz1, sx1, sy0, sz1, [1, 0, 0]);
-                // Bottom face (visible from below, shows breakthrough holes)
-                // Normal = [0,0,-1] (downward)
-                addWall(sx0, sy0, sz0, sx1, sy0, sz0, sx1, sy1, sz0, sx0, sy1, sz0, [0, 0, -1]);
-                HM.sideBuf = mkSB(sideV, sideI);
-
-                // Bottom face breakthrough mesh: same grid as top but at Z=0, downward normals
-                // Shows holes where HM.data < 0 (breakthrough)
-                // We build a separate mesh using the HM data to show openings at Z=0
-                // For each cell: if HM.data[cell] < 0 → this cell has breakthrough → don't draw bottom quad
-                // → draw bottom as HM-masked grid (hole where cut through)
-                var botV = [], botI = [], bv = 0;
-                for (var iy = 0; iy < ny - 1; iy++) {
-                    for (var ix = 0; ix < nx - 1; ix++) {
-                        // All 4 corners of this quad — skip if any corner is breakthrough
-                        var d00 = d[iy * nx + ix], d10 = d[iy * nx + ix + 1];
-                        var d01 = d[(iy + 1) * nx + ix], d11 = d[(iy + 1) * nx + ix + 1];
-                        if (d00 >= 0 && d10 >= 0 && d01 >= 0 && d11 >= 0) continue; // solid — bottom covered by side bottom face
-                        if (d00 < 0 && d10 < 0 && d01 < 0 && d11 < 0) continue; // fully broken through — hole, don't draw
-                        // Partial breakthrough: draw bottom face for non-breakthrough corners
-                        // Simple: just skip fully solid quads and fully broken quads
-                        // For partially broken: draw the quad at Z=0 to show the edge
-                    }
+                // Trim stale bands if grid shrank (full rebuild with smaller geometry)
+                if (HM.meshBufs.length > bandIdx) {
+                    for (var bsi = bandIdx; bsi < HM.meshBufs.length; bsi++) freeSB(HM.meshBufs[bsi]);
+                    HM.meshBufs.length = bandIdx;
                 }
 
-                // Build bottom breakthrough indicator mesh:
-                // For cells where HM < 0, place a red quad at Z=0 viewed from below
-                var btV = [], btI = [], btv = 0;
-                for (var iy = 0; iy < ny - 1; iy++) {
-                    for (var ix = 0; ix < nx - 1; ix++) {
-                        var avg = (d[iy * nx + ix] + d[iy * nx + ix + 1] + d[(iy + 1) * nx + ix] + d[(iy + 1) * nx + ix + 1]) / 4;
-                        if (avg < 0) {
-                            // This quad is (partially) breakthrough — mark it on bottom face
-                            var qx0 = (ix) * HM_RES + WO.x, qy0 = (iy) * HM_RES + WO.y;
-                            var qx1 = (ix + 1) * HM_RES + WO.x, qy1 = (iy + 1) * HM_RES + WO.y;
-                            var qz = 0; // bottom of material
-                            // Normal [0,0,-1] for downward face
-                            btV.push(qx0, qy0, qz, 0, 0, -1);
-                            btV.push(qx1, qy0, qz, 0, 0, -1);
-                            btV.push(qx1, qy1, qz, 0, 0, -1);
-                            btV.push(qx0, qy1, qz, 0, 0, -1);
-                            btI.push(btv, btv + 2, btv + 1, btv, btv + 3, btv + 2);
-                            btv += 4;
-                            if (btv >= 65532) break; // safety
+                // Side walls + bottom face — geometry is static (depends only on WO/MAT),
+                // so build ONCE on a full rebuild. Incremental cuts never change it.
+                if (isFullRebuild || !HM.sideBuf) {
+                    freeSB(HM.sideBuf); HM.sideBuf = null;
+                    var sx0 = WO.x, sy0 = WO.y, sx1 = WO.x + MAT.x, sy1 = WO.y + MAT.y, sz0 = 0, sz1 = MAT.z;
+                    var sideV = [], sideI = [], sv = 0;
+                    var addWall = function (x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3, nn) {
+                        sideV.push(x0, y0, z0, nn[0], nn[1], nn[2]);
+                        sideV.push(x1, y1, z1, nn[0], nn[1], nn[2]);
+                        sideV.push(x2, y2, z2, nn[0], nn[1], nn[2]);
+                        sideV.push(x3, y3, z3, nn[0], nn[1], nn[2]);
+                        sideI.push(sv, sv + 1, sv + 2, sv, sv + 2, sv + 3); sv += 4;
+                    };
+                    addWall(sx0, sy0, sz0, sx1, sy0, sz0, sx1, sy0, sz1, sx0, sy0, sz1, [0, -1, 0]);
+                    addWall(sx0, sy1, sz0, sx1, sy1, sz0, sx1, sy1, sz1, sx0, sy1, sz1, [0, 1, 0]);
+                    addWall(sx0, sy0, sz0, sx0, sy1, sz0, sx0, sy1, sz1, sx0, sy0, sz1, [-1, 0, 0]);
+                    addWall(sx1, sy0, sz0, sx1, sy1, sz0, sx1, sy1, sz1, sx1, sy0, sz1, [1, 0, 0]);
+                    addWall(sx0, sy0, sz0, sx1, sy0, sz0, sx1, sy1, sz0, sx0, sy1, sz0, [0, 0, -1]);
+                    HM.sideBuf = mkSB(sideV, sideI);
+                }
+
+                // Bottom-face breakthrough indicator mesh: a red quad at Z=0 for every cell
+                // cut below the bottom (HM<0). This full grid scan only runs when a new
+                // breakthrough actually happened (HM.btDirty) — not on every cut.
+                if (isFullRebuild || HM.btDirty) {
+                    freeSB(HM.btBuf); HM.btBuf = null;
+                    var btV = [], btI = [], btv = 0;
+                    for (var iy = 0; iy < ny - 1; iy++) {
+                        for (var ix = 0; ix < nx - 1; ix++) {
+                            var avg = (d[iy * nx + ix] + d[iy * nx + ix + 1] + d[(iy + 1) * nx + ix] + d[(iy + 1) * nx + ix + 1]) / 4;
+                            if (avg < 0) {
+                                var qx0 = (ix) * HM_RES + WO.x, qy0 = (iy) * HM_RES + WO.y;
+                                var qx1 = (ix + 1) * HM_RES + WO.x, qy1 = (iy + 1) * HM_RES + WO.y;
+                                var qz = 0;
+                                btV.push(qx0, qy0, qz, 0, 0, -1);
+                                btV.push(qx1, qy0, qz, 0, 0, -1);
+                                btV.push(qx1, qy1, qz, 0, 0, -1);
+                                btV.push(qx0, qy1, qz, 0, 0, -1);
+                                btI.push(btv, btv + 2, btv + 1, btv, btv + 3, btv + 2);
+                                btv += 4;
+                                if (btv >= 65532) break;
+                            }
                         }
+                        if (btv >= 65532) break;
                     }
-                    if (btv >= 65532) break;
-                }
-                freeSB(HM.btBuf); HM.btBuf = null;
-                if (btV.length > 0) {
-                    var btVF = new Float32Array(btV);
-                    var btIF = new Uint16Array(btI);
-                    var bvb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bvb);
-                    gl.bufferData(gl.ARRAY_BUFFER, btVF, gl.DYNAMIC_DRAW);
-                    var bib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bib);
-                    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, btIF, gl.DYNAMIC_DRAW);
-                    HM.btBuf = { chunks: [{ vb: bvb, ib: bib, n: btI.length }] };
+                    if (btV.length > 0) {
+                        var btVF = new Float32Array(btV);
+                        var btIF = new Uint16Array(btI);
+                        var bvb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bvb);
+                        gl.bufferData(gl.ARRAY_BUFFER, btVF, gl.DYNAMIC_DRAW);
+                        var bib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bib);
+                        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, btIF, gl.DYNAMIC_DRAW);
+                        HM.btBuf = { chunks: [{ vb: bvb, ib: bib, n: btI.length }] };
+                    }
+                    HM.btDirty = false;
                 }
 
                 HM.dirty = false; HM.dirtyY0 = HM.ny; HM.dirtyY1 = 0;
@@ -2020,6 +2010,7 @@
                         if (cutZ < HM.data[rowBase + ix] && cutZ <= MAT.z) {
                             var newZ = cutZ < negMatZ ? negMatZ : cutZ;
                             HM.data[rowBase + ix] = newZ;
+                            if (newZ < 0) HM.btDirty = true; // breakthrough below bottom face → rebuild bt mesh
                             if (!HM.dirty) { HM.dirty = true; HM.dirtyY0 = iy; HM.dirtyY1 = iy; }
                             else { if (iy < HM.dirtyY0) HM.dirtyY0 = iy; if (iy > HM.dirtyY1) HM.dirtyY1 = iy; }
                         }
@@ -2069,18 +2060,37 @@
             var rapidData = [], cutData = [], lbRapid = null, lbCut = null;
 
             // Toolpaths drawn with depth test OFF. addSeg pushes to CPU arrays only.
-            // flushTP() uploads to GPU — called after each execOne (or batch of steps).
+            // flushTP() uploads new toolpath segments to the GPU. Now batched: called once
+            // per RAF frame during RUN and once per manual STEP (not per segment).
             function addSeg(mx0, my0, mz0, mx1, my1, mz1, isR) {
                 if (isR) { rapidData.push(mx0, my0, mz0, 1.0, 0.18, 0.18, mx1, my1, mz1, 1.0, 0.18, 0.18); }
                 else { cutData.push(mx0, my0, mz0, 0.18, 0.48, 1.00, mx1, my1, mz1, 0.18, 0.48, 1.00); }
             }
-            function flushTP() {
-                // Always do full upload — simpler and correct.
-                // appendLB caused silent failures when buffers were null.
-                lbRapid = upLB(lbRapid, rapidData);
-                lbCut = upLB(lbCut, cutData);
+            // Incremental GPU upload: only the segments added since the last flush are
+            // pushed via bufferSubData (appendLB). Falls back to a full upLB when the
+            // buffer must grow or when the CPU array shrank (cleared/reset).
+            // This turns the old O(N^2) per-segment full re-upload into O(N) total.
+            var _tpUpR = 0, _tpUpC = 0; // floats already uploaded (rapid / cut)
+            function tpUpload(lb, data, isR) {
+                var up = isR ? _tpUpR : _tpUpC;
+                if (!lb) {
+                    lb = upLB(null, data);                 // first upload (full)
+                } else if (data.length < up) {
+                    lb = upLB(lb, data);                   // array shrank → full reupload
+                } else if (data.length > up) {
+                    var tail = new Float32Array(data.slice(up));
+                    lb = appendLB(lb, tail);               // append only the new tail
+                    if (lb.needsFullUpload) lb = upLB(lb, data); // capacity exceeded → full
+                }
+                var nf = lb ? lb.n * 6 : 0;
+                if (isR) _tpUpR = nf; else _tpUpC = nf;
+                return lb;
             }
-            function clearTP() { rapidData = []; cutData = []; lbRapid = null; lbCut = null; }
+            function flushTP() {
+                lbRapid = tpUpload(lbRapid, rapidData, true);
+                lbCut = tpUpload(lbCut, cutData, false);
+            }
+            function clearTP() { rapidData = []; cutData = []; lbRapid = null; lbCut = null; _tpUpR = 0; _tpUpC = 0; }
 
             // ================================================================
             // Arc tessellation — operates in WORK coords, returns machine pts
@@ -2275,7 +2285,7 @@
                         var m0 = w2m(sim.wx, sim.wy, sim.wz);
                         var m1 = w2m(nwx, nwy, nwz);
                         addSeg(m0.x, m0.y, m0.z, m1.x, m1.y, m1.z, isR);
-                        flushTP();
+                        // flushTP() deferred — batched once per frame / manual step
                         // Heightmap: update for all cutting moves (hmUpdateSeg filters by MAT range internally)
                         if (!isR) {
                             hmUpdateSeg(m0.x, m0.y, m0.z, m1.x, m1.y, m1.z);
@@ -2320,7 +2330,7 @@
                             if (Math.abs(r0 - r1) > r0 * 0.05 + 1.0) {
                                 clogL('warn', LN, 'G' + G + ' R不一致(' + r0.toFixed(2) + '/' + r1.toFixed(2) + ')-直線近似');
                                 var m0_ = w2m(sim.wx, sim.wy, sim.wz), m1_ = w2m(nwx, nwy, nwz);
-                                addSeg(m0_.x, m0_.y, m0_.z, m1_.x, m1_.y, m1_.z, false); flushTP();
+                                addSeg(m0_.x, m0_.y, m0_.z, m1_.x, m1_.y, m1_.z, false);
                                 sim.wx = nwx; sim.wy = nwy; sim.wz = nwz; setMode('CUT'); return true;
                             }
                         }
@@ -2335,7 +2345,7 @@
                             addSeg(pm0.x, pm0.y, pm0.z, pm1.x, pm1.y, pm1.z, false);
                             hmUpdateSeg(pm0.x, pm0.y, pm0.z, pm1.x, pm1.y, pm1.z);
                         }
-                        flushTP();
+                        // flushTP() deferred — batched once per frame / manual step
                         sim.wx = nwx; sim.wy = nwy; sim.wz = nwz;
                         sim.lastG = G; // modal G update
                         setMode('CUT');
@@ -2343,7 +2353,7 @@
                     }
                     else if (G === 28) {
                         var m0 = w2m(sim.wx, sim.wy, sim.wz);
-                        addSeg(m0.x, m0.y, m0.z, 0, 0, 0, true); flushTP();
+                        addSeg(m0.x, m0.y, m0.z, 0, 0, 0, true);
                         sim.wx = 0; sim.wy = 0; sim.wz = 0; setMode('HOME'); if (!sim.running) clogL('ok', LN, 'G28: HOME');
                     }
                     else if (G === 54) { }
@@ -2408,70 +2418,75 @@
                 sim.running = true; document.getElementById('btnrun').textContent = 'PAUSE'; setMode('RUNNING');
                 clog('ok', '▶ RUN開始 (' + sim.cmds.length + '行)');
 
-                // Speed map: slider 1-100 → multiplier 1x-100x
-                // multiplier = round(10^(v/43.4)) gives ~1x at v=1, ~100x at v=100
-                // At low speed: delay = base_ms / mult  (setTimeout)
-                // At high speed (mult>=10): process mult steps per RAF frame, delay=0
-                var BASE_MS = 80; // ms per step at 1x
+                // ── Single RAF loop with a time accumulator ──
+                // Steps are paced by elapsed wall-clock time (independent of frame rate),
+                // and ALL heavy work (toolpath flush, HM mesh rebuild, render, DOM updates)
+                // happens at most ONCE per frame. The old design ran an RAF loop and a
+                // setTimeout loop in parallel, each calling hmBuildMesh()+render() — doubling
+                // the work every frame. This removes that.
+                var BASE_MS = 80;               // ms per step at 1x
+                var MAX_STEPS_PER_FRAME = 8000; // hard cap so one frame can never freeze the tab
 
                 function getSpeedMult() {
                     var v = parseInt(document.getElementById('spd').value);
-                    // exponential: 1x..100x
-                    var mult = Math.round(Math.pow(100, (v - 1) / 99));
+                    var mult = Math.round(Math.pow(100, (v - 1) / 99)); // exponential 1x..100x
                     return Math.max(1, Math.min(100, mult));
                 }
-
-                var rafId = null;
-                var lastHMBuild = 0;
-
-                function rafLoop() {
-                    if (!sim.running) { rafId = null; if (HM.dirty) hmBuildMesh(); render(); return; }
-                    if (sim.idx > 0 && sim.idx <= sim.cmds.length) {
-                        hlLine(sim.cmds[sim.idx - 1].ln - 1);
-                        document.getElementById('pbar').style.width = (sim.idx / sim.cmds.length * 100).toFixed(1) + '%';
-                        updDRO(sim.wx, sim.wy, sim.wz, sim.feed + 'mm/m');
-                    }
-                    if (HM.dirty) hmBuildMesh();
-                    render();
-                    rafId = requestAnimationFrame(rafLoop);
+                function stepsPerSecond(mult) {
+                    // Low speed: fine-grained pacing (12.5 steps/s at 1x).
+                    // High speed: scale up aggressively to match the old per-frame throughput.
+                    if (mult <= 4) return mult * (1000 / BASE_MS);
+                    return mult * 60 * (mult > 60 ? 2 : 1);
                 }
 
-                function tick() {
-                    if (!sim.running) return;
-                    var mult = getSpeedMult();
-                    var stepsPerTick, hmInterval;
-                    if (mult <= 4) { stepsPerTick = 1; hmInterval = 1; }
-                    else if (mult <= 20) { stepsPerTick = mult; hmInterval = mult; }
-                    else if (mult <= 60) { stepsPerTick = mult; hmInterval = 50; }
-                    else { stepsPerTick = mult * 2; hmInterval = 200; }
+                var rafId = null, acc = 0, lastT = performance.now();
 
-                    var cont = true;
-                    for (var i = 0; i < stepsPerTick; i++) {
+                function frame(now) {
+                    if (!sim.running) {            // paused/stopped externally
+                        rafId = null;
+                        if (HM.dirty) hmBuildMesh();
+                        flushTP(); hlLineRestore(); render();
+                        return;
+                    }
+                    var mult = getSpeedMult();
+                    var dt = now - lastT; lastT = now;
+                    if (dt > 250) dt = 250;            // clamp big gaps (tab was backgrounded)
+                    acc += dt / 1000 * stepsPerSecond(mult);
+                    var budget = Math.floor(acc);
+                    if (budget > MAX_STEPS_PER_FRAME) budget = MAX_STEPS_PER_FRAME;
+                    acc -= budget;
+
+                    var cont = true, did = 0;
+                    for (var i = 0; i < budget; i++) {
                         if (sim.idx >= sim.cmds.length) { cont = false; break; }
-                        cont = window.stepSim();
+                        cont = window.stepSim(); did++;
                         if (!cont) break;
                     }
-                    if (HM.dirty && (sim.idx - lastHMBuild >= hmInterval)) {
-                        hmBuildMesh(); lastHMBuild = sim.idx;
+
+                    if (did > 0) {
+                        hlLine(sim.cmds[Math.min(sim.idx, sim.cmds.length) - 1].ln - 1);
+                        document.getElementById('pbar').style.width = (sim.idx / sim.cmds.length * 100).toFixed(1) + '%';
+                        updDRO(sim.wx, sim.wy, sim.wz, sim.feed + 'mm/m');
+                        flushTP();                 // batched toolpath upload (incremental tail)
+                        if (HM.dirty) hmBuildMesh(); // batched HM rebuild (one dirty band)
+                        render();
                     }
+
                     if (sim.idx >= sim.cmds.length || !cont) {
                         sim.running = false; document.getElementById('btnrun').textContent = '▶ RUN';
                         clog('ok', '■ 完了: ' + sim.idx + '行処理');
-                        hmBuildMesh(); hlLineRestore(); render();
-                        if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
-                        return;
+                        flushTP(); if (HM.dirty) hmBuildMesh(); hlLineRestore(); render();
+                        rafId = null; return;
                     }
-                    var delay = mult >= 5 ? 0 : Math.round(BASE_MS / mult);
-                    sim.timer = setTimeout(tick, delay);
+                    rafId = requestAnimationFrame(frame);
                 }
-                rafId = requestAnimationFrame(rafLoop);
-                tick();
+                rafId = requestAnimationFrame(frame);
             };
             window.stopSim = function () {
                 clearTimeout(sim.timer); sim.running = false; document.getElementById('btnrun').textContent = '▶ RUN';
                 if (document.getElementById('mbadge').textContent === 'RUNNING') setMode('IDLE');
                 clog('info', '⏹ 停止: L' + sim.idx + ' / ' + sim.cmds.length);
-                hlLineRestore(); render();
+                flushTP(); if (HM.dirty) hmBuildMesh(); hlLineRestore(); render();
             };
 
             // ================================================================
@@ -2710,7 +2725,7 @@
             window.updLN();
             updWODisp();
             resize(); render();
-            clog('info', 'CNC Simulator 起動 -- 機械:X2350 Y1200 Z150mm');
+            clog('info', 'CNC Simulator v2.37 起動 -- 機械:X2350 Y1200 Z150mm');
             renderToolTable();
             updHMInfo();
             clog('dim', '中ボタンドラッグ:平行移動 / EXAMPLEでサンプル -> RUN');
