@@ -323,6 +323,7 @@
             flex-direction: column;
             background: var(--panel);
             min-height: 0;
+            overflow: hidden;
         }
 
         .tab-nav {
@@ -556,17 +557,18 @@
         }
 
         .lnum {
-            width: 34px;
-            padding: 6px 4px 6px 0;
+            width: 40px;
+            padding: 6px 4px 6px 2px;
             text-align: right;
-            font-size: .66rem;
-            line-height: 1.5rem;
+            font-size: .68rem;
+            line-height: 1.48rem;
             color: var(--dim);
             border-right: 1px solid var(--border);
             background: #060810;
             overflow: hidden;
             flex-shrink: 0;
             user-select: none;
+            white-space: pre;
         }
 
         textarea#gc {
@@ -576,8 +578,8 @@
             outline: none;
             color: var(--text);
             font-family: 'Share Tech Mono',monospace;
-            font-size: .70rem;
-            line-height: 1.5rem;
+            font-size: .68rem;
+            line-height: 1.48rem;
             padding: 6px 7px;
             resize: none;
             overflow-y: auto;
@@ -622,6 +624,96 @@
         .warn .msg {
             color: #ffa040;
         }
+        /* Tool table */
+        .tool-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: .65rem;
+            margin-top: 4px;
+        }
+
+            .tool-table th {
+                padding: 3px 5px;
+                color: var(--dim);
+                border-bottom: 1px solid var(--border);
+                text-align: left;
+                font-weight: normal;
+                letter-spacing: 1px;
+            }
+
+            .tool-table td {
+                padding: 2px 4px;
+                border-bottom: 1px solid #111820;
+                vertical-align: middle;
+            }
+
+            .tool-table tr.active-tool td {
+                background: #00c8ff12;
+            }
+
+            .tool-table tr.active-tool .t-num {
+                color: var(--accent);
+            }
+
+            .tool-table input[type=number] {
+                width: 46px;
+                background: #0d1825;
+                border: 1px solid transparent;
+                color: var(--text);
+                font-family: 'Share Tech Mono',monospace;
+                font-size: .65rem;
+                padding: 1px 3px;
+                outline: none;
+                text-align: right;
+            }
+
+                .tool-table input[type=number]:focus {
+                    border-color: var(--accent);
+                    background: #0d1825;
+                }
+
+            .tool-table input[type=text] {
+                width: 100%;
+                background: transparent;
+                border: none;
+                outline: none;
+                color: var(--dim);
+                font-family: 'Share Tech Mono',monospace;
+                font-size: .64rem;
+                padding: 1px 2px;
+            }
+
+                .tool-table input[type=text]:focus {
+                    color: var(--text);
+                    border-bottom: 1px solid var(--dim);
+                }
+
+            .tool-table select {
+                background: #0d1825;
+                border: 1px solid transparent;
+                color: var(--text);
+                font-family: 'Share Tech Mono',monospace;
+                font-size: .63rem;
+                padding: 1px 2px;
+                outline: none;
+                cursor: pointer;
+                width: 100%;
+            }
+
+                .tool-table select:focus {
+                    border-color: var(--accent);
+                }
+
+            .tool-table tr.active-tool input, .tool-table tr.active-tool select {
+                color: var(--accent);
+            }
+
+        .t-num {
+            color: #40d0c0;
+            font-size: .7rem;
+            font-weight: bold;
+            white-space: nowrap;
+        }
     </style>
 </head>
 <body>
@@ -634,13 +726,14 @@
             <div class="dro-item">WORK Y<span class="dro-val" id="hy">0.000</span><span class="dro-mach" id="hmy">MCH:0.000</span></div>
             <div class="dro-item">WORK Z<span class="dro-val" id="hz">0.000</span><span class="dro-mach" id="hmz">MCH:0.000</span></div>
             <div class="dro-item">FEED<span class="dro-val" id="hf">--</span></div>
+            <div class="dro-item" style="margin-left:6px;border-left:1px solid var(--border);padding-left:8px;">TOOL<span class="dro-val" id="htool" style="color:#40d0c0;min-width:80px;">T1 6mm F</span></div>
         </div>
-        <div class="badge" id="mbadge">IDLE</div>
+        <div class="badge" id="mbadge" style="display:none">IDLE</div>
         <div class="hbtns">
             <button class="btn" onclick="resetSim()">RESET</button>
             <button class="btn" onclick="stepSim()">STEP</button>
-            <button class="btn brun" id="btnrun" onclick="toggleRun()">&#9654; RUN</button>
-            <button class="btn bstop" onclick="stopSim()">&#9632; STOP</button>
+            <button class="btn brun" id="btnrun" onclick="toggleRun()">▶ RUN</button>
+            <button class="btn bstop" onclick="stopSim()">■ STOP</button>
             <span style="font-size:.58rem;color:var(--dim)">SPD</span>
             <input type="range" id="spd" min="1" max="100" value="50">
             <span style="font-size:.58rem;color:var(--dim)" id="spd-lbl">x1</span>
@@ -657,8 +750,7 @@
             <div class="corner bl"></div><div class="corner br"></div>
             <div class="scan"></div>
             <div class="vp-info">
-                机械: X<b>2350</b> Y<b>1200</b> Z<b>150</b>mm &nbsp;
-                WO/MAT: <span class="wo-disp" id="vp-wo">X100 Y100 / 1820×910×12</span><br>
+                MATERIAL SIZE: <span class="wo-disp" id="vp-wo">1820×910×12</span><br>
                 [左ドラッグ:パン] [中ボタン:回転] [スクロール:ズーム]
             </div>
             <!-- Line counter: shown in viewport, anchored bottom-right -->
@@ -707,13 +799,6 @@
                             <textarea id="gc" spellcheck="false" oninput="updLN()" onscroll="syncScroll()"
                                       placeholder="; G-Code (ワーク座標)&#10;G28&#10;G0 X0 Y0 Z5&#10;G1 X100 Y100 F2000"></textarea>
                         </div>
-                        <div style="display:flex;align-items:center;justify-content:space-between;padding:3px 8px;background:#060810;border-top:1px solid var(--border);flex-shrink:0;">
-                            <span style="font-size:.58rem;color:var(--dim)">CONSOLE</span>
-                            <div style="display:flex;gap:5px;">
-                                <button class="btn" style="padding:2px 7px;font-size:.6rem" onclick="document.getElementById('con').innerHTML='';logN=0;">CLEAR</button>
-                            </div>
-                        </div>
-                        <div class="console" id="con"></div>
                     </div>
                 </div>
 
@@ -765,30 +850,42 @@
                 <!-- ── Tab: TOOL ── -->
                 <div class="tab-pane" id="tp-tool">
                     <div class="sec">
-                        <div class="sec-title">TOOL SETTINGS</div>
-                        <div class="row">
-                            <span class="flabel">径</span>
-                            <input class="finput tool" type="number" id="tool-dia" value="6" min="0.1" max="100" step="0.1">
-                            <span class="flabel">mm</span>
+                        <div class="sec-title" style="display:flex;justify-content:space-between;align-items:center;">
+                            <span style="display:flex;align-items:center;gap:5px;">
+                                <span style="width:4px;height:4px;background:var(--accent);display:block"></span>
+                                TOOL TABLE
+                            </span>
+                            <span id="tool-disp" style="color:#40d0c0;font-size:.65rem;letter-spacing:1px;">T1 フラット ⌀6mm</span>
                         </div>
-                        <div class="row">
-                            <span class="flabel">形状</span>
-                            <select class="fselect" id="tool-type" onchange="applyTool()">
-                                <option value="flat" selected>フラット</option>
-                                <option value="ball">ボール</option>
-                                <option value="v90">V90°</option>
-                                <option value="v60">V60°</option>
-                            </select>
+                        <table class="tool-table" id="tool-tbl">
+                            <thead>
+                                <tr>
+                                    <th style="width:24px"></th>
+                                    <th style="width:28px">T#</th>
+                                    <th style="width:52px">径mm</th>
+                                    <th style="width:80px">形状</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tool-tbody"></tbody>
+                        </table>
+                        <div class="row" style="margin-top:6px;gap:5px;">
+                            <button class="abtn at" onclick="applyToolTable()" style="font-size:.62rem">APPLY ALL</button>
+                            <button class="abtn" onclick="resetToolTable()" style="font-size:.62rem">RESET</button>
                         </div>
-                        <div class="row" style="margin-top:6px;">
-                            <button class="abtn at" onclick="applyTool()">APPLY</button>
-                            <span class="flabel" id="tool-disp" style="color:#40d0c0">フラット ⌀6mm</span>
+                    </div>
+                    <div class="sec">
+                        <div class="sec-title">CURRENT TOOL</div>
+                        <div class="row" style="gap:8px;flex-wrap:wrap;">
+                            <span class="flabel">T</span>
+                            <span id="cur-tnum" style="color:var(--accent);font-size:.85rem;font-weight:bold;">1</span>
+                            <span class="flabel" style="margin-left:4px">径</span>
+                            <span id="cur-tdia" style="color:#40d0c0;font-size:.78rem;">6mm</span>
+                            <span class="flabel" style="margin-left:4px">形状</span>
+                            <span id="cur-ttype" style="color:#40d0c0;font-size:.78rem;">フラット</span>
                         </div>
-                        <div class="info-text" style="margin-top:8px;">
-                            フラット: 平底円柱<br>
-                            ボール: 半球底<br>
-                            V90°: 先端角90°コーン<br>
-                            V60°: 先端角60°コーン
+                        <div class="info-text" style="margin-top:5px;">
+                            M6 T1〜T9 でツール自動切替<br>
+                            T番号単独行でプリセット可
                         </div>
                     </div>
                 </div>
@@ -854,6 +951,14 @@
                 </div>
 
             </div><!-- tab-content -->
+            <!-- ── Console: always visible below tabs ── -->
+            <div style="flex-shrink:0;border-top:1px solid var(--border);background:#060810;">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:2px 8px;">
+                    <span style="font-size:.58rem;color:var(--dim);letter-spacing:1px;">CONSOLE</span>
+                    <button class="btn" style="padding:1px 7px;font-size:.58rem" onclick="document.getElementById('con').innerHTML='';logN=0;">CLEAR</button>
+                </div>
+            </div>
+            <div class="console" id="con" style="height:100px;flex-shrink:0;"></div>
         </div><!-- tab-panel -->
 
     </div><!-- main -->
@@ -902,7 +1007,8 @@
                 rebuildWork();
                 hmInit();
                 updHMInfo();
-                clog('info', '材料: ' + MAT.x + 'x' + MAT.y + 'x' + MAT.z + 'mm  WO: X' + WO.x + ' Y' + WO.y + ' Z' + WO.z);
+                var hmMB = (HM.nx * HM.ny * 6 * 4 / 1024 / 1024).toFixed(0);
+                clog('info', 'HM初期化: ' + MAT.x + '×' + MAT.y + '×' + MAT.z + 'mm (' + HM.nx + '×' + HM.ny + ' ' + HM_RES + 'mm ' + hmMB + 'MB)');
                 render();
             };
             // Keep applyWO as alias so old calls still work
@@ -921,7 +1027,7 @@
 
             function updWODisp() {
                 document.getElementById('vp-wo').textContent =
-                    'X' + WO.x + ' Y' + WO.y + ' / ' + MAT.x + '×' + MAT.y + '×' + MAT.z;
+                    MAT.x + '×' + MAT.y + '×' + MAT.z;
             }
 
             // ================================================================
@@ -978,14 +1084,16 @@
                 // shallow cut (0 <= vZ < uMatZ): aluminium → warm yellow
                 // deep/breakthrough (vZ < 0): warm yellow → red
                 '  vec3 col;' +
-                '  if(vZ>=uMatZ-0.01){' +
+                '  if(vZ>=uMatZ){' +
                 '    col=vec3(0.75,0.78,0.82);' + // aluminum (uncut)
                 '  } else if(vZ>=0.0){' +
-                '    float t=1.0-vZ/uMatZ;' +      // 0=surface, 1=bottom
-                '    col=mix(vec3(0.72,0.76,0.80),vec3(0.85,0.65,0.20),t);' + // grey→orange
+                '    float mz=uMatZ-0.01;' +
+                '    float t=clamp(1.0-vZ/max(mz,0.001),0.0,1.0);' +
+                '    col=mix(vec3(0.72,0.76,0.80),vec3(0.88,0.62,0.18),t);' + // grey→orange
                 '  } else {' +
-                '    float t=min(1.0,-vZ/uMatZ);' + // 0=Z=0, 1=breakthrough full depth
-                '    col=mix(vec3(0.85,0.55,0.15),vec3(0.90,0.10,0.05),t);' + // orange→red
+                '    float mz2=uMatZ-0.01;' +
+                '    float t=clamp(-vZ/max(mz2,0.001),0.0,1.0);' +
+                '    col=mix(vec3(0.88,0.52,0.12),vec3(0.92,0.08,0.04),t);' + // orange→red
                 '  }' +
                 '  gl_FragColor=vec4(col*lit,uAlpha);' +
                 '}'
@@ -1512,34 +1620,124 @@
                 return mkSB(verts, idxs);
             }
 
-            // Build gMill from current tool settings
-            var TOOL = { dia: 6, type: 'flat' };
+            // ================================================================
+            // TOOL TABLE  T1〜T9
+            // ================================================================
+            var TOOL_NAMES = { 'flat': 'フラット', 'ball': 'ボール', 'v90': 'V90°', 'v60': 'V60°' };
+            var TOOL_TYPES = ['flat', 'ball', 'v90', 'v60'];
+            var TOOL_TABLE = [
+                { n: 1, dia: 6, type: 'flat', name: 'エンドミル6' },
+                { n: 2, dia: 12, type: 'flat', name: 'エンドミル12' },
+                { n: 3, dia: 3, type: 'flat', name: 'エンドミル3' },
+                { n: 4, dia: 6, type: 'ball', name: 'ボールエンド6' },
+                { n: 5, dia: 12, type: 'ball', name: 'ボールエンド12' },
+                { n: 6, dia: 12, type: 'v90', name: 'V刃90°' },
+                { n: 7, dia: 12, type: 'v60', name: 'V刃60°' },
+                { n: 8, dia: 1, type: 'flat', name: 'エンドミル1' },
+                { n: 9, dia: 1, type: 'flat', name: 'エンドミル1' },
+            ];
+            var TOOL = { dia: 6, type: 'flat', n: 1 };
+
             function buildToolGeo() {
-                var r = TOOL.dia / 2;
-                var h = MILL_H;
-                var seg = MILL_SEG;
+                var r = TOOL.dia / 2, h = MILL_H, seg = MILL_SEG;
                 if (TOOL.type === 'flat') return bFlat(r, h, seg);
                 if (TOOL.type === 'ball') return bBall(r, h, seg);
                 if (TOOL.type === 'v90') return bVBit(r, h, seg, 45);
                 if (TOOL.type === 'v60') return bVBit(r, h, seg, 30);
                 return bFlat(r, h, seg);
             }
+            function renderToolTable() {
+                var tbody = document.getElementById('tool-tbody');
+                if (!tbody) return;
+                tbody.innerHTML = '';
+                for (var i = 0; i < TOOL_TABLE.length; i++) {
+                    (function (t) {
+                        var tr = document.createElement('tr');
+                        if (t.n === TOOL.n) tr.className = 'active-tool';
 
-            window.applyTool = function () {
-                var dia = parseFloat(document.getElementById('tool-dia').value);
-                var type = document.getElementById('tool-type').value;
-                if (!dia || dia <= 0) dia = 6;
-                TOOL.dia = dia; TOOL.type = type;
-                var names = { 'flat': 'フラット', 'ball': 'ボール', 'v90': 'V90\u00b0', 'v60': 'V60\u00b0' };
-                document.getElementById('tool-disp').textContent = names[type] + ' \u2300' + dia + 'mm';
+                        // ▶ 選択ボタン
+                        var tdBtn = document.createElement('td');
+                        tdBtn.style.cssText = 'padding:1px 3px;';
+                        var btn = document.createElement('button');
+                        btn.textContent = '\u25b6';
+                        var isActive = (t.n === TOOL.n);
+                        btn.style.cssText = (isActive
+                            ? 'background:var(--accent);color:#000;border:1px solid var(--accent);'
+                            : 'background:transparent;color:var(--dim);border:1px solid var(--border);')
+                            + 'font-family:"Share Tech Mono",monospace;font-size:.6rem;'
+                            + 'padding:1px 5px;cursor:pointer;transition:all .15s;';
+                        btn.title = 'T' + t.n + ' を選択';
+                        (function (tn) {
+                            btn.addEventListener('click', function (e) {
+                                e.stopPropagation(); selectTool(tn);
+                            });
+                        })(t.n);
+                        tdBtn.appendChild(btn); tr.appendChild(tdBtn);
+
+                        // T# 番号
+                        var tdN = document.createElement('td');
+                        tdN.className = 't-num'; tdN.textContent = 'T' + t.n;
+                        tr.appendChild(tdN);
+
+                        // 径 input
+                        var tdD = document.createElement('td');
+                        var inp = document.createElement('input');
+                        inp.type = 'number'; inp.value = t.dia;
+                        inp.min = '0.1'; inp.max = '100'; inp.step = '0.1';
+                        inp.dataset.n = String(t.n); inp.dataset.f = 'dia';
+                        (function (el) { el.addEventListener('change', function () { toolTableEdit(el); }); })(inp);
+                        tdD.appendChild(inp); tr.appendChild(tdD);
+
+                        // 形状 select
+                        var tdT = document.createElement('td');
+                        var sel = document.createElement('select');
+                        sel.dataset.n = String(t.n); sel.dataset.f = 'type';
+                        TOOL_TYPES.forEach(function (v) {
+                            var op = document.createElement('option');
+                            op.value = v; op.textContent = TOOL_NAMES[v];
+                            if (v === t.type) op.selected = true;
+                            sel.appendChild(op);
+                        });
+                        (function (el) { el.addEventListener('change', function () { toolTableEdit(el); }); })(sel);
+                        tdT.appendChild(sel); tr.appendChild(tdT);
+
+                        tbody.appendChild(tr);
+                    })(TOOL_TABLE[i]);
+                }
+            }
+
+            function selectTool(n) {
+                var t = TOOL_TABLE.find(function (x) { return x.n === n; });
+                if (!t) return;
+                TOOL.n = t.n; TOOL.dia = t.dia; TOOL.type = t.type;
                 gMill = buildToolGeo();
-                render();
-                var con = document.getElementById('con');
-                var d = document.createElement('div'); d.className = 'cl info';
-                d.innerHTML = '<span class="ts">[TOOL]</span><span class="msg"> ' + names[type] + ' \u2300' + dia + 'mm \u30bb\u30c3\u30c8</span>';
-                con.appendChild(d); con.scrollTop = con.scrollHeight;
+                var dname = TOOL_NAMES[t.type] || t.type;
+                var td = document.getElementById('tool-disp');
+                if (td) td.textContent = 'T' + t.n + ' ' + dname + ' ⌀' + t.dia + 'mm';
+                var cn = document.getElementById('cur-tnum'); if (cn) cn.textContent = t.n;
+                var cd = document.getElementById('cur-tdia'); if (cd) cd.textContent = t.dia + 'mm';
+                var ct = document.getElementById('cur-ttype'); if (ct) ct.textContent = dname;
+                // ヘッダーTOOL表示更新 例: T6 12mm V90
+                var ht = document.getElementById('htool');
+                if (ht) {
+                    var tshort = { 'flat': 'F', 'ball': 'B', 'v90': 'V90', 'v60': 'V60' };
+                    ht.textContent = 'T' + t.n + ' ' + t.dia + 'mm ' + (tshort[t.type] || t.type);
+                }
+                renderToolTable();
+                if (!sim.running) render();
+            }
+            window.applyTool = function () { selectTool(TOOL.n); };
+            window.applyToolTable = function () { selectTool(TOOL.n); clog('info', 'ツールテーブル適用'); };
+            window.resetToolTable = function () {
+                TOOL_TABLE = [
+                    { n: 1, dia: 6, type: 'flat', name: 'エンドミル6' }, { n: 2, dia: 12, type: 'flat', name: 'エンドミル12' },
+                    { n: 3, dia: 3, type: 'flat', name: 'エンドミル3' }, { n: 4, dia: 6, type: 'ball', name: 'ボールエンド6' },
+                    { n: 5, dia: 12, type: 'ball', name: 'ボールエンド12' }, { n: 6, dia: 12, type: 'v90', name: 'V刃90°' },
+                    { n: 7, dia: 12, type: 'v60', name: 'V刃60°' }, { n: 8, dia: 1, type: 'flat', name: 'エンドミル1' },
+                    { n: 9, dia: 1, type: 'flat', name: 'エンドミル1' },
+                ];
+                selectTool(1); clog('info', 'ツールテーブルリセット');
             };
-
 
             // ================================================================
             // HEIGHT MAP — Pattern 1: 2.5D CSG simulation
@@ -1654,14 +1852,17 @@
                     return { chunks: [{ vb: vb, ib: ib, n: bdata.n, idxType: bdata.idxType }] };
                 }
 
-                // バンド分割: 境界行を共有しない完全非オーバーラップ方式
-                // iyBand=0, iyEnd=min(bandRows, ny-1)
-                // 次: iyBand=iyEnd, iyEnd=min(iyEnd+bandRows, ny-1)
-                // → 境界行 iyEnd は次バンドで頂点として再計算されるが
-                //   前バンドのクワッドは iyEnd-1 まで → 重複描画ゼロ
-                var bandRows = Math.max(1, Math.floor(65534 / nx) - 1);
-                // Uint32 が使えるなら大きなバンドでOK（理想は1バンド）
-                if (uint32ext) bandRows = Math.max(bandRows, ny);
+                // バンドサイズ: Float32で1バンド最大32MB = 32*1024*1024/24 = 1,398,101頂点
+                // これを行数に換算: floor(1_398_101 / nx)
+                var MAX_BAND_VERTS = 1398101; // ~32MB per band
+                var bandRows;
+                if (uint32ext) {
+                    // Uint32: 頂点数上限で分割（インデックス上限なし）
+                    bandRows = Math.max(1, Math.floor(MAX_BAND_VERTS / nx) - 1);
+                } else {
+                    // Uint16: インデックス上限 65534 で分割
+                    bandRows = Math.max(1, Math.floor(65534 / nx) - 1);
+                }
 
                 var bandIdx = 0, iyBand = 0;
                 while (iyBand < ny - 1) {
@@ -1840,7 +2041,9 @@
                 HM_RES = v;
                 hmInit();
                 updHMInfo();
-                clog('info', 'HM精度変更: ' + v + 'mm/cell (' + HM.nx + 'x' + HM.ny + '=' + HM.nx * HM.ny + 'セル)');
+                var cellMB = (HM.nx * HM.ny * 6 * 4 / 1024 / 1024).toFixed(0);
+                var warn = HM.nx * HM.ny > 3000000 ? '⚠ 重い' : 'OK';
+                clog('info', 'HM初期化: 精度' + v + 'mm (' + HM.nx + '×' + HM.ny + '=' + HM.nx * HM.ny.toLocaleString() + 'セル, ' + cellMB + 'MB) ' + warn);
                 render();
             };
             function updHMInfo() {
@@ -1986,7 +2189,7 @@
                     // Top surface: depth-colored (uncut=grey, shallow=yellow, breakthrough=red)
                     if (HM.meshBufs) {
                         for (var bi = 0; bi < HM.meshBufs.length; bi++) {
-                            drawHM(HM.meshBufs[bi], mvp, MAT.z, 1.0);
+                            drawHM(HM.meshBufs[bi], mvp, MAT.z + 0.01, 1.0); // uMatZ=初期値で未切削判定
                         }
                     }
                     // Breakthrough bottom: red quads at Z=0 where tool punched through
@@ -2030,7 +2233,7 @@
             // sim stores WORK coords (wx, wy, wz)
             // All display / toolpath uses w2m() → machine coords
             // ================================================================
-            var sim = { wx: 0, wy: 0, wz: 0, feed: 1000, abs: true, cmds: [], idx: 0, running: false, timer: null, lastG: -1 };
+            var sim = { wx: 0, wy: 0, wz: 0, feed: 1000, abs: true, cmds: [], idx: 0, running: false, timer: null, lastG: -1, lastT: 1 };
 
             function parseGC(txt) {
                 return txt.split('\n').map(function (raw, i) {
@@ -2150,6 +2353,7 @@
                     // else: unknown G — silently skip
                 }
 
+                if (w.T !== undefined && G === undefined && w['M'] === undefined) sim.lastT = w.T;
                 var M = w['M'];
                 if (M !== undefined) {
                     if (M === 0 || M === 1) { clogL('info', LN, 'M' + M + ': Stop'); stopSim(); return false; }
@@ -2157,7 +2361,11 @@
                     if (M === 3) { if (!sim.running) clog('ok', 'M3 S' + (w.S || '--')); }
                     else if (M === 4) { if (!sim.running) clog('ok', 'M4 S' + (w.S || '--')); }
                     else if (M === 5) { if (!sim.running) clog('info', 'M5 Spindle OFF'); }
-                    else if (M === 6) { if (!sim.running) clog('info', 'M6 T' + (w.T || '--')); }
+                    else if (M === 6) {
+                        var tn = w.T !== undefined ? w.T : (sim.lastT || 1);
+                        sim.lastT = tn; selectTool(tn);
+                        clogL('ok', LN, 'M6 T' + tn + ': ' + (TOOL_NAMES[TOOL.type] || TOOL.type) + ' ⌀' + TOOL.dia + 'mm');
+                    }
                     // else: unknown M — silently skip
                 }
                 return true;
@@ -2165,7 +2373,7 @@
 
             window.resetSim = function () {
                 clearTimeout(sim.timer);
-                sim.wx = 0; sim.wy = 0; sim.wz = 0; sim.feed = 1000; sim.abs = true; sim.lastG = -1;
+                sim.wx = 0; sim.wy = 0; sim.wz = 0; sim.feed = 1000; sim.abs = true; sim.lastG = -1; sim.lastT = 1;
                 sim.cmds = []; sim.idx = 0; sim.running = false; sim.timer = null;
                 clearTP(); hmReset(); updDRO(0, 0, 0, '--'); setMode('IDLE');
                 document.getElementById('pbar').style.width = '0%'; hlLine(-1); render();
@@ -2245,7 +2453,7 @@
                         hmBuildMesh(); lastHMBuild = sim.idx;
                     }
                     if (sim.idx >= sim.cmds.length || !cont) {
-                        sim.running = false; document.getElementById('btnrun').textContent = '&#9654; RUN';
+                        sim.running = false; document.getElementById('btnrun').textContent = '▶ RUN';
                         clog('ok', '■ 完了: ' + sim.idx + '行処理');
                         hmBuildMesh(); hlLineRestore(); render();
                         if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
@@ -2258,7 +2466,7 @@
                 tick();
             };
             window.stopSim = function () {
-                clearTimeout(sim.timer); sim.running = false; document.getElementById('btnrun').textContent = '&#9654; RUN';
+                clearTimeout(sim.timer); sim.running = false; document.getElementById('btnrun').textContent = '▶ RUN';
                 if (document.getElementById('mbadge').textContent === 'RUNNING') setMode('IDLE');
                 clog('info', '⏹ 停止: L' + sim.idx + ' / ' + sim.cmds.length);
                 hlLineRestore(); render();
@@ -2476,6 +2684,7 @@
                     window.updLN();
                     hlLine(sim.idx > 0 && sim.cmds.length > 0 ? sim.cmds[Math.min(sim.idx, sim.cmds.length) - 1].ln - 1 : -1);
                 }
+                if (name === 'tool') renderToolTable();
             };
             // Speed label live update (both header slider and tab slider)
             window.syncSpd = function (src) {
@@ -2500,8 +2709,8 @@
             updWODisp();
             resize(); render();
             clog('info', 'CNC Simulator 起動 -- 機械:X2350 Y1200 Z150mm');
+            renderToolTable();
             updHMInfo();
-            clog('info', 'ハイトマップ切削シミュ有効 / 材料 300x300x12mm (変更可)');
             clog('dim', '中ボタンドラッグ:平行移動 / EXAMPLEでサンプル -> RUN');
         })();
     </script>
