@@ -21,6 +21,8 @@ WebGL製のブラウザで動くCNC Gコードシミュレーター。
 
 ### 基本操作
 
+https://tanakanatsuki.github.io/CNCSIM/
+
 1. `index.html` をブラウザで開く（Chrome / Edge 推奨）
 2. 右パネル **GCODE タブ** にGコードを貼り付け、またはファイルを読み込む
 3. ヘッダーの **▶ RUN** ボタンで実行
